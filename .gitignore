@@ -1,0 +1,32 @@
+# Secrets - NEVER commit
+.env
+.env.local
+*.secret
+
+# Extracted CC data - large, contains customer info
+data/raw/
+data/processed/
+data/cache/
+*.parquet
+*.csv.gz
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
