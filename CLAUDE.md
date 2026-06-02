@@ -73,7 +73,11 @@ until the slotting logic has been validated against reality for a quarter.
 - 95,212 SO line items / 90 days
 - 9,613 PO line items / 180 days
 - 460 active products
-- **0 / 460 SKUs have carton dimensions in CC** — primary blocker
+- **Carton dims (updated 12 May 2026): ~409 SKUs captured LOCALLY**
+  (`data/dims/`, L/W/H 100%, inner-pack-qty 99.5%, weight ~69%) — but
+  **0 synced to CartonCloud.** Local dims drive slotting/wave analysis
+  today; CC-native wave + cartonisation need them IN CC. The original
+  "0/460 in CC" blocker is now a *sync* problem, not a *capture* problem.
 - Customer-scoped API client sees only "The Forage Company" (UUID
   `d4810e1e-91ab-43ed-b68e-b72bd858b122`)
 - Tenant: `4906532d-94ad-444c-89cf-e394d7d73581` (GoCold Warehouse Management)
@@ -108,10 +112,12 @@ until the slotting logic has been validated against reality for a quarter.
 
 - API client + extract + analysis all working end-to-end against real
   Forage data (validated 10 May 2026).
-- **Carton dim capture is the next blocker.** `capture_template.xlsx`
-  ready for warehouse team — 460 SKUs sorted by measurement priority,
-  Go Cold branded.
-- Once dims are captured, next build:
+- **Carton dim capture is DONE** (~409 SKUs, captured 12 May 2026 via the
+  Go Cold branded `capture_template.xlsx`). **The next blocker is dims→CC
+  sync** — getting captured dims into CartonCloud. That work lives in the
+  `dim-capture-app/` sub-project (modules 02 `cc-client` PATCH /products +
+  04 `dim-api`/syncService — both not yet built).
+- Now that dims exist locally, next build:
     - Slotting recommendations: which SKU at which bay height
       (1500/1100/750mm) given (cube × velocity × replen frequency)
     - Replen rule generator: set qty trigger vs max-fill trigger per SKU
