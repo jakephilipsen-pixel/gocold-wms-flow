@@ -1,0 +1,128 @@
+{
+  "project": "gocold-wms-flow",
+  "audited_at": "2026-06-03T00:00:00+10:00",
+  "git_sha": "e95a6c575bf1e725c3f5a16971da0c565105be83",
+  "git_state": {
+    "commits_in_repo": 2,
+    "untracked_paths": 27,
+    "modified_tracked": 5,
+    "note": "The entire wave-pick generator and most of src/ + all data/ is uncommitted."
+  },
+  "source_of_truth": "CLAUDE.md",
+  "scope_note": "First /audit-project sweep targeted /home/pop_os/archive/gocold (a stale, parallel legacy folder). Operator redirected to the real project at /home/pop_os/archive/rolodex/gocold-wms-flow via dims.ods. This report is scoped to the real project; legacy folder findings retained as an appendix (L1-L3).",
+  "definition_of_done": [
+    "Wave pick generator pulls AWAITING_PICK_AND_PACK SOs and emits operator-ready PDF/CSV sheets under data/processed/waves/<ts>/ (no CC mutation).",
+    "CartonCloud client is read-only (write_enabled=False default); never POST/PUT/PATCH/DELETE except read-via-POST search. Non-negotiable: SAP-B1 writes could collide.",
+    "Carton dimensions captured for the active Forage SKU set (target 438-460) to unblock slotting + cartonisation.",
+    "No stub/placeholder code; Australian English; src/ layout; .env-only secrets.",
+    "(dim-capture-app sub-project) dims synced into CartonCloud via PATCH /products."
+  ],
+  "modules_claimed": [
+    {"name": "dim-capture-app/01 backend-core", "status": "🟨", "verified_actual": "scaffold only — routes return 501, no migrations, no .env, no passing tests; its own STATE.md says 'Not started'"},
+    {"name": "dim-capture-app/02 cc-client", "status": "🔲", "verified_actual": "not started (blocks dims→CC sync)"},
+    {"name": "dim-capture-app/03 sku-seed", "status": "🔲", "verified_actual": "not started"},
+    {"name": "dim-capture-app/04 dim-api", "status": "🔲", "verified_actual": "not started (blocks dims→CC sync)"},
+    {"name": "dim-capture-app/05 frontend-scaffold", "status": "🔲", "verified_actual": "not started"},
+    {"name": "dim-capture-app/06 capture-page", "status": "🔲", "verified_actual": "not started"},
+    {"name": "dim-capture-app/07 progress-review", "status": "🔲", "verified_actual": "not started"},
+    {"name": "dim-capture-app/08 docker-deploy", "status": "🔲", "verified_actual": "not started (docker-compose.local.yml present, untested)"}
+  ],
+  "findings": [
+    {
+      "id": "R1",
+      "severity": "GAP",
+      "title": "Dims→CartonCloud sync not built",
+      "evidence": "~409 SKUs have dims in data/dims/dims_2026-05-13.xlsx but 0 in CC. dim_loader.py reads local-only, no CC write. Sync requires dim-capture-app modules 02 (cc-client PATCH /products) + 04 (dim-api); both 🔲 not started, routes return 501 (dim-capture-app/backend/src/routes/sync.ts:5, dims.ts:5).",
+      "constraint": "CLAUDE.md: dims-in-CC needed for CC-native wave/cartonisation; safety rule = no auto-write to CC.",
+      "maps_to_module": "dim-capture-app (build 01→02→04)",
+      "gate": "deploy-local (dim-capture-app)",
+      "verified": true
+    },
+    {
+      "id": "R2",
+      "severity": "DRIFT",
+      "title": "CLAUDE.md dims line stale",
+      "evidence": "CLAUDE.md:76 says '0 / 460 SKUs have carton dimensions in CC — primary blocker' (dated 10 May). Dims captured 12 May (27%→100% jump). Should read ~409 captured locally, 0 synced to CC.",
+      "constraint": null,
+      "maps_to_module": "update CLAUDE.md",
+      "gate": "none",
+      "verified": true
+    },
+    {
+      "id": "R3",
+      "severity": "DRIFT",
+      "title": "dim-capture-app module-01 icon overstates reality",
+      "evidence": "dim-capture-app/MODULES.md marks 01 backend-core 🟨 in-progress, but modules/backend-core/STATE.md says 'Not started' and code is scaffold-only (all routes return 501, no Prisma migration, no .env, vitest present but no implementations).",
+      "constraint": "Framework rule: a module is not done without passing smoke + STATE.md current; icons must not lie.",
+      "maps_to_module": "reconcile MODULES.md icon vs STATE.md",
+      "gate": "none",
+      "verified": true
+    },
+    {
+      "id": "R4",
+      "severity": "GATE",
+      "title": "Working wave generator is uncommitted",
+      "evidence": "git: 2 commits total, 27 untracked paths. wave_picks.py, generate_waves.py, src/output/, src/locations/, most of src/analysis/, all data/ are untracked. A reset/rm loses production-ready work.",
+      "constraint": "House style: complete, production-ready code — but it is not under version control.",
+      "maps_to_module": "commit/checkpoint",
+      "gate": "none",
+      "verified": true
+    },
+    {
+      "id": "R5",
+      "severity": "GAP",
+      "title": "No tests — read-only guard unguarded by regression",
+      "evidence": "tests/ is empty. The write_enabled gate (cc_client/client.py:139) and wave consolidation are validated only by real-data runs. The read-only guard is the project non-negotiable and has no test.",
+      "constraint": "CLAUDE.md non-negotiable: read-only CC. An unenforced-by-test non-negotiable is the highest-value missing test.",
+      "maps_to_module": "add read-only-guard + wave-consolidation tests",
+      "gate": "none",
+      "verified": true
+    },
+    {
+      "id": "R6",
+      "severity": "GAP",
+      "title": "Dim weight capture incomplete",
+      "evidence": "dims_2026-05-13.xlsx: outer weight 281/409 (69%); inner-pack-qty 407/409 (99.5%, 2 blank). L/W/H 100%.",
+      "constraint": null,
+      "maps_to_module": "finish dim capture (weight)",
+      "gate": "none",
+      "verified": true
+    },
+    {
+      "id": "L1",
+      "severity": "GAP",
+      "title": "[legacy] Duplicate/blank each-barcodes in archive/gocold sheets",
+      "evidence": "archive/gocold/FINAL EACH BARCODE.ods: 5 barcodes each map to 2 distinct SKUs (15060489730043/0203/0654/0739 Dash single vs doublepack; 19358794000095 Barbell sea-salt variants) + 34 blank of 422. Verified by direct ODS parse. Risk is real ONLY if these were loaded into CC's product master (scan ambiguity at bench). Wave generator picks by SKU/location, not barcode — not blocked.",
+      "constraint": "Spec: each barcode must resolve to exactly one product.",
+      "maps_to_module": "barcode dedup (legacy, if sheets are live in CC)",
+      "gate": "none",
+      "verified": true
+    },
+    {
+      "id": "L2",
+      "severity": "GAP",
+      "title": "[legacy] Plaintext SMTP password",
+      "evidence": "archive/gocold/pdf_to_cartoncloud_sales/.env:5 holds a Gmail app password. Not git-tracked (local only, not published). Rotate + add .gitignore if module is still used.",
+      "constraint": "Secrets hygiene.",
+      "maps_to_module": "secrets-hygiene (legacy)",
+      "gate": "none",
+      "verified": true
+    },
+    {
+      "id": "L3",
+      "severity": "NON_CODE",
+      "title": "[legacy] Inbound-API vs sales-email-CSV path",
+      "evidence": "archive/gocold inbound module = real CC REST API but dormant (no .env, stale PO 2777.pdf in inbox since Jan 14). sales module = CSV-over-email, ran Mar 9. If either is still live, pick a go-forward path.",
+      "constraint": null,
+      "maps_to_module": null,
+      "gate": "none",
+      "verified": true
+    }
+  ],
+  "gate_readiness": {
+    "compile_stress": "unverified",
+    "deploy_local": "blocked",
+    "note": "gocold-wms-flow root is a scripts+notebooks repo with no module registry, so compile-stress/deploy-local do not apply to the wave pipeline. dim-capture-app is framework-managed and deploy-local is BLOCKED (.deploy-state local_validated:false; ~1/8 modules scaffolded)."
+  },
+  "verdict": "Wave pick generator is real, complete, ran for real, and enforces the read-only non-negotiable. The 0/460-dims blocker is effectively resolved locally (~409 captured). The only real remaining build is dims→CC sync via dim-capture-app (~1/8 built). Biggest immediate risk is non-technical: the working generator is uncommitted."
+}

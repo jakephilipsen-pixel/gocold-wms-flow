@@ -133,10 +133,14 @@ def compute_velocity(snap: Snapshot) -> VelocityResult:
     # --- merge: outer join so we see SKUs that exist on one side but not the other
     metrics = by_sku_so.join(by_sku_po, how="outer")
 
-    # join product master (type, name fallback)
-    products_idx = products.set_index("product_code")[
-        ["name", "type", "default_uom"]
-    ].rename(columns={"name": "product_name_master"})
+    # join product master (type, name fallback). dedupe products on
+    # product_code first — CC has been known to emit duplicate rows for
+    # the same SKU and we'd break the join otherwise.
+    products_idx = (
+        products.drop_duplicates(subset=["product_code"], keep="first")
+        .set_index("product_code")[["name", "type", "default_uom"]]
+        .rename(columns={"name": "product_name_master"})
+    )
     metrics = metrics.join(products_idx)
     metrics["product_name"] = (
         metrics["product_name_master"].fillna(metrics["product_name_first"])
