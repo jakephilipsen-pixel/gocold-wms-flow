@@ -206,7 +206,7 @@ def _build_index_md(
     out_dir: Path,
     sheets: list,
     skipped: pd.DataFrame,
-    args,
+    cfg: dict,
 ) -> None:
     """Top-level index.md summarising every wave in this run."""
     lines = [
@@ -214,12 +214,12 @@ def _build_index_md(
         f"_Generated: {datetime.now():%Y-%m-%d %H:%M}_",
         "",
         "## Settings",
-        f"- Status filter: `{args.status}`",
-        f"- Customer filter: `{args.customer_name or '(none)'}`",
-        f"- pallet_fraction_threshold: {args.pallet_fraction_threshold:.2f}",
-        f"- early_release_cartons: {args.early_release_cartons}",
-        f"- run_group_col: `{args.run_group_col}`",
-        f"- Pick rate assumption: {args.lines_per_hour} lines/hour",
+        f"- Status filter: `{cfg['status']}`",
+        f"- Customer filter: `{cfg['customer_name'] or '(none)'}`",
+        f"- pallet_fraction_threshold: {cfg['pallet_fraction_threshold']:.2f}",
+        f"- early_release_cartons: {cfg['early_release_cartons']}",
+        f"- run_group_col: `{cfg['run_group_col']}`",
+        f"- Pick rate assumption: {cfg['lines_per_hour']} lines/hour",
         "",
         f"## {len(sheets)} wave(s) generated",
         "",
@@ -259,3 +259,201 @@ def _build_index_md(
             )
 
     (out_dir / "index.md").write_text("\n".join(lines))
+
+
+def _settings_dict(settings, audit_path, assignments_path):
+    """Flatten the settings used for a run into a JSON-serialisable dict."""
+    return {
+        "status": settings.status,
+        "customer_name": settings.customer_name,
+        "pallet_fraction_threshold": settings.pallet_fraction_threshold,
+        "early_release_cartons": settings.early_release_cartons,
+        "run_group_col": settings.run_group_col,
+        "lines_per_hour": settings.lines_per_hour,
+        "soh_fallback": settings.soh_fallback,
+        "assignments_path": str(assignments_path) if assignments_path else None,
+        "audit_parquet": str(audit_path),
+    }
+
+
+# ---------------------------------------------------------------------------
+# The orchestration core. Both the CLI and the web console call this.
+# ---------------------------------------------------------------------------
+
+
+def run_wave_generation(
+    settings: WaveRunSettings,
+    progress: ProgressCallback,
+) -> RunResult:
+    """Run the full wave pick pipeline once. Read-only against CC."""
+    repo_root = settings.repo_root
+    raw_dir = settings.raw_dir or repo_root / "data" / "raw"
+    out_base = settings.out_dir or repo_root / "data" / "processed" / "waves"
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_dir = out_base / stamp
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    def emit(stage, message, level="info", **data):
+        progress(ProgressEvent(stage=stage, message=message, level=level, data=data))
+
+    try:
+        _load_dotenv(repo_root / ".env")
+        flatten_fn = _get_flatten_fn(repo_root)
+        statuses = [s.strip() for s in settings.status.split(",") if s.strip()]
+
+        # 1. live SO pull
+        emit("pull", f"pulling SOs with status {statuses} from CC…")
+        client = CartonCloudClient.from_env()
+        audit_path = raw_dir / f"so_lines_open_{stamp}.parquet"
+        so_lines = _pull_open_orders(
+            client, status=statuses, customer_name=settings.customer_name,
+            out_path=audit_path, flatten_fn=flatten_fn,
+        )
+        if so_lines.empty:
+            (out_dir / "index.md").write_text(
+                f"# Wave Pick Run\n_{datetime.now():%Y-%m-%d %H:%M}_\n\n"
+                f"No orders matched status `{settings.status}` "
+                f"(customer={settings.customer_name!r}).\n"
+            )
+            summary = {"n_waves": 0, "n_orders_total": 0,
+                       "n_orders_skipped": 0, "n_pick_lines_total": 0}
+            (out_dir / "manifest.json").write_text(json.dumps(
+                {"generated_at": datetime.now().isoformat(),
+                 "settings": _settings_dict(settings, audit_path, None),
+                 "summary": summary, "waves": []}, indent=2))
+            emit("done", "No open orders to wave.", level="ok", **summary)
+            return RunResult(stamp, out_dir, summary, "empty")
+        emit("pull", f"pulled {so_lines['so_id'].nunique()} orders → "
+                     f"{len(so_lines)} lines", level="ok")
+
+        # 2. snapshot
+        snap = _build_snapshot(so_lines, raw_dir)
+        emit("snapshot", "snapshot built (live SO + latest PO/products)", level="ok")
+
+        # 3. dims
+        dim_path = settings.dims_path or _latest_file(
+            repo_root / "data" / "dims", "dims_*.xlsx")
+        if not dim_path or not dim_path.exists():
+            raise FileNotFoundError("no dim file in data/dims/")
+        dims = load_dimensions(dim_path)
+        emit("dims", f"dims {int(dims['measurement_complete'].sum())}/"
+                     f"{len(dims)} SKUs measured", level="ok")
+
+        # 4. routing
+        rules_path = settings.rules_path or _latest_file(
+            repo_root / "data" / "routing", "consignee_rules*.csv")
+        rules = load_consignee_rules(rules_path)
+        raw_vel = compute_velocity(snap)
+        apply_tags(raw_vel.sku_metrics, dims)
+        full_pallet = run_full_pallet_analysis(
+            snap, dims, raw_vel.sku_metrics, ratio=settings.pallet_ratio)
+        metrics = compute_order_metrics(snap, dims, full_pallet)
+        emit("route", f"{metrics.n_orders:,} orders "
+                      f"({metrics.n_orders_with_dims} full dim coverage)", level="ok")
+
+        # 5. classify
+        classification = classify_streams(
+            metrics, rules,
+            pallet_fraction_threshold=settings.pallet_fraction_threshold)
+        emit("classify", "streams classified: " + ", ".join(
+            f"{k}={int(v)}" for k, v in classification.counts_by_stream.items()),
+            level="ok")
+
+        # 6. locations
+        loc_path = settings.locations_path or _latest_file(
+            repo_root / "data" / "locations", "*.xlsx")
+        if not loc_path or not loc_path.exists():
+            raise FileNotFoundError("no locations xlsx in data/locations/")
+        locations = load_cc_locations(loc_path)
+        emit("locations", f"loaded locations from {loc_path.name}", level="ok")
+
+        # 7. assignments
+        assignments_df = None
+        assignments_path = settings.assignments_path or _latest_assignments(
+            repo_root / "data" / "processed")
+        if assignments_path and assignments_path.exists():
+            assignments_df = pd.read_csv(assignments_path)
+            emit("assignments", f"{len(assignments_df)} SKU assignments", level="ok")
+        else:
+            emit("assignments", "no assignments file found — orders without "
+                                "a known location will be skipped", level="info")
+
+        # 8. SOH fallback (optional, off by default)
+        fallback_df = None
+        if settings.soh_fallback:
+            emit("assignments", "pulling SKU→location fallback via SOH…")
+            codes = sorted({c for c in so_lines["product_code"].dropna().unique()})
+            soh_customer_id = (so_lines.iloc[0]["customer_id"]
+                               if "customer_id" in so_lines.columns else None)
+            if soh_customer_id:
+                try:
+                    items = get_sku_locations(
+                        client, customer_id=soh_customer_id, product_codes=codes)
+                    if items:
+                        fallback_df = pd.DataFrame(items).rename(
+                            columns={"location_name": "location"})
+                        emit("assignments",
+                             f"SOH gave {len(fallback_df)} (SKU, location) rows",
+                             level="ok")
+                except CartonCloudError as exc:
+                    emit("assignments", f"SOH fallback failed: {exc}", level="info")
+
+        # 9. wave generation
+        emit("generate", "generating wave pick sheets…")
+        result = generate_wave_pick_sheets(
+            classification=classification, so_lines=snap.so_lines,
+            locations=locations, assignments=assignments_df,
+            sku_locations_fallback=fallback_df,
+            run_group_col=settings.run_group_col,
+            early_release_cartons=settings.early_release_cartons)
+        emit("generate",
+             f"{result.summary['n_waves']} waves, "
+             f"{result.summary['n_orders_total']} orders, "
+             f"{result.summary['n_orders_skipped']} skipped", level="ok")
+
+        # 10. write outputs
+        logo_path = (settings.logo_path
+                     if settings.logo_path and Path(settings.logo_path).exists()
+                     else None)
+        for sheet in result.sheets:
+            wave_dir = out_dir / sheet.wave_id
+            wave_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                generate_wave_pdf(
+                    sheet, wave_dir / f"{sheet.wave_id}_picksheet.pdf",
+                    logo_path=logo_path, lines_per_hour=settings.lines_per_hour)
+            except Exception as exc:  # noqa: BLE001
+                emit("write", f"PDF failed for {sheet.wave_id}: "
+                              f"{type(exc).__name__}: {exc}", level="info")
+                continue
+            write_wave_csvs(sheet, wave_dir)
+
+        if not result.skipped_orders.empty:
+            result.skipped_orders.to_csv(out_dir / "skipped_orders.csv", index=False)
+
+        # 11. index + manifest
+        _build_index_md(out_dir, result.sheets, result.skipped_orders,
+                        _settings_dict(settings, audit_path, assignments_path))
+        manifest = {
+            "generated_at": datetime.now().isoformat(),
+            "settings": _settings_dict(settings, audit_path, assignments_path),
+            "summary": result.summary,
+            "waves": [
+                {"wave_id": s.wave_id, "stream": s.stream,
+                 "run_group": s.run_group,
+                 "receive_date": s.receive_date.isoformat() if s.receive_date else None,
+                 "total_cartons": s.total_cartons, "total_lines": s.total_lines,
+                 "n_orders": len(s.orders),
+                 "estimated_walk_m": s.estimated_walk_distance_m}
+                for s in result.sheets],
+        }
+        (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+
+        emit("done", f"Done — {result.summary['n_waves']} waves written.",
+             level="ok", **result.summary)
+        return RunResult(stamp, out_dir, result.summary, "success")
+
+    except Exception as exc:  # noqa: BLE001
+        log.exception("wave generation failed")
+        emit("done", f"Run failed: {type(exc).__name__}: {exc}", level="error")
+        return RunResult(stamp, out_dir, {}, "failed", error=str(exc))

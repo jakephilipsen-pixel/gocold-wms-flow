@@ -3,7 +3,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from wave_runner import ProgressEvent, RunResult, WaveRunSettings
+import pytest
+
+from wave_runner import (
+    ProgressEvent,
+    RunResult,
+    WaveRunSettings,
+    run_wave_generation,
+)
+
+_ROOT = Path(__file__).resolve().parent.parent
 
 
 def test_settings_defaults_pull_from_analysis_constants():
@@ -57,3 +66,101 @@ def test_load_dotenv_sets_missing_keys(tmp_path, monkeypatch):
     import os
     assert os.environ["FOO"] == "bar"
     assert os.environ["BAZ"] == "qux"
+
+
+# ---------------------------------------------------------------------------
+# run_wave_generation — end-to-end against the real pipeline (no network).
+# ---------------------------------------------------------------------------
+
+
+def _fake_order(so_ref, code):
+    """A minimal CC outbound order shaped to feed the REAL flattener.
+
+    Mirrors exactly the keys ``scripts/extract.py:_flatten_outbound_order_lines``
+    reads, so it explodes into one usable per-line row (so_id, product_code,
+    quantity, customer_id, delivery_* …). The order has no resolvable pick
+    location in this environment (no assignments file), so it is skipped by the
+    wave generator — but the pipeline still runs end-to-end and writes a
+    manifest.
+    """
+    return {
+        "id": f"id-{so_ref}",
+        "status": "AWAITING_PICK_AND_PACK",
+        "references": {"customer": so_ref, "numericId": "999001"},
+        "customer": {
+            "id": "d4810e1e-91ab-43ed-b68e-b72bd858b122",
+            "name": "The Forage Company",
+        },
+        "warehouse": {"name": "Default"},
+        "details": {
+            "urgent": False,
+            "deliver": {
+                "requiredDate": "2026-06-05",
+                "address": {
+                    "companyName": "Test Co",
+                    "suburb": "Scoresby",
+                    "state": {"code": "VIC"},
+                    "postcode": "3179",
+                },
+            },
+        },
+        "timestamps": {
+            "created": {"time": "2026-06-04T08:00:00+10:00"},
+            "modified": {"time": "2026-06-04T08:05:00+10:00"},
+            "packed": {"time": None},
+            "dispatched": {"time": None},
+        },
+        "items": [
+            {
+                "details": {
+                    "product": {
+                        "id": f"prod-{code}",
+                        "references": {"code": code},
+                        "name": f"Product {code}",
+                    },
+                    "unitOfMeasure": {"type": "EA", "name": "Each"},
+                },
+                "measures": {"quantity": 5},
+                "properties": {"batch": "20271002", "expiryDate": "2027-10-02"},
+            }
+        ],
+    }
+
+
+@pytest.fixture
+def fake_cc(monkeypatch):
+    """Patch the live CC pull + client construction to avoid network."""
+    monkeypatch.setattr(
+        "wave_runner.CartonCloudClient.from_env",
+        classmethod(lambda cls, **kw: object()),
+    )
+    return monkeypatch
+
+
+def test_run_emits_progress_and_writes_run(tmp_path, fake_cc):
+    orders = [_fake_order("SO-1", "SOME-SKU")]
+    fake_cc.setattr(
+        "wave_runner.search_outbound_orders",
+        lambda client, **kw: iter(orders),
+    )
+    events: list[ProgressEvent] = []
+    settings = WaveRunSettings(repo_root=_ROOT, out_dir=tmp_path / "waves")
+    result = run_wave_generation(settings, events.append)
+
+    assert result.status in {"success", "empty"}
+    assert [e.stage for e in events][:1] == ["pull"]
+    assert any(e.stage == "done" for e in events)
+    assert (result.out_dir / "manifest.json").exists()
+
+
+def test_run_with_no_orders_is_empty(tmp_path, fake_cc):
+    fake_cc.setattr(
+        "wave_runner.search_outbound_orders",
+        lambda client, **kw: iter([]),
+    )
+    events: list[ProgressEvent] = []
+    settings = WaveRunSettings(repo_root=_ROOT, out_dir=tmp_path / "waves")
+    result = run_wave_generation(settings, events.append)
+    assert result.status == "empty"
+    assert (result.out_dir / "index.md").exists()
+    assert (result.out_dir / "manifest.json").exists()
