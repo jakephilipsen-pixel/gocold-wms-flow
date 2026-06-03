@@ -21,7 +21,7 @@ label{display:block;font-size:13px;color:var(--muted);margin-bottom:12px}
 .tbl td{border-bottom:1px solid #eef2f5;padding:9px 9px}
 .tbl a{color:var(--blue);text-decoration:none;font-weight:600}
 .muted{color:var(--muted)}
-.log{font-family:ui-monospace,monospace;font-size:14px;line-height:1.7;background:var(--ink);color:#dbeaf8;border-radius:8px;padding:14px 16px}
+.log{font-family:ui-monospace,monospace;font-size:28px;line-height:1.5;background:var(--ink);color:#dbeaf8;border-radius:8px;padding:18px 20px}
 .log .ok{color:var(--green)} .log .run{color:var(--yellow)} .log .error{color:#ff8f8f}
 .cards{display:flex;gap:12px;margin-bottom:16px}
 .stat{flex:1;border:1px solid var(--line);border-top:3px solid var(--green);border-radius:8px;padding:12px 14px}
