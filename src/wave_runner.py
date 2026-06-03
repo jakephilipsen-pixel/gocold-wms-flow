@@ -13,7 +13,6 @@ import importlib.util
 import json
 import logging
 import os
-import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -107,13 +106,14 @@ _flatten_cache: dict = {}
 
 def _get_flatten_fn(repo_root: Path):
     """Lazily load _flatten_outbound_order_lines from scripts/extract.py."""
-    if "fn" not in _flatten_cache:
+    key = str(repo_root)
+    if key not in _flatten_cache:
         extract_path = repo_root / "scripts" / "extract.py"
         spec = importlib.util.spec_from_file_location("_extract_mod", extract_path)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
-        _flatten_cache["fn"] = mod._flatten_outbound_order_lines
-    return _flatten_cache["fn"]
+        _flatten_cache[key] = mod._flatten_outbound_order_lines
+    return _flatten_cache[key]
 
 
 # ---------------------------------------------------------------------------
