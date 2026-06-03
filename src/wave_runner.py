@@ -16,6 +16,7 @@ from pathlib import Path
 from analysis import (
     DEFAULT_AWAITING_STATUS,
     DEFAULT_EARLY_RELEASE_CARTONS,
+    DEFAULT_FULL_PALLET_RATIO,
     DEFAULT_LINES_PER_HOUR,
     DEFAULT_PALLET_FRACTION_THRESHOLD,
 )
@@ -36,7 +37,7 @@ class WaveRunSettings:
     run_group_col: str = "delivery_state"
     soh_fallback: bool = False
     lines_per_hour: int = DEFAULT_LINES_PER_HOUR
-    pallet_ratio: float = 0.9
+    pallet_ratio: float = DEFAULT_FULL_PALLET_RATIO
     # Optional explicit paths; None = resolve from repo_root at run time.
     raw_dir: Path | None = None
     dims_path: Path | None = None
@@ -50,10 +51,10 @@ class WaveRunSettings:
 @dataclass
 class ProgressEvent:
     """One streamed progress line."""
-    stage: str          # machine key: pull / snapshot / dims / route / classify / locations / assignments / generate / write / done
+    stage: str          # machine-readable stage key (see run_wave_generation)
     message: str        # human-readable line
     level: str = "info"  # info / ok / error
-    data: dict = field(default_factory=dict)
+    data: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass
@@ -61,7 +62,7 @@ class RunResult:
     """Outcome of a single ``run_wave_generation`` call."""
     run_id: str
     out_dir: Path
-    summary: dict
+    summary: dict[str, object]
     status: str          # success / empty / failed
     error: str | None = None
 

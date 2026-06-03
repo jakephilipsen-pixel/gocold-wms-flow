@@ -15,6 +15,7 @@ def test_settings_defaults_pull_from_analysis_constants():
     assert s.run_group_col == "delivery_state"
     assert s.soh_fallback is False
     assert s.lines_per_hour == 60
+    assert s.pallet_ratio == 0.9
 
 
 def test_progress_event_levels_default_info():
