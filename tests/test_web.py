@@ -97,3 +97,67 @@ def test_index_lists_existing_runs(tmp_path, client):
     _make_run(base, "20260604_081200")
     r = client.get("/")
     assert "20260604_081200" in r.text
+
+
+def test_post_runs_starts_job_and_returns_progress_panel(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    import web.app as appmod
+    from wave_runner import RunResult, ProgressEvent
+
+    def fake_run(settings, progress):
+        progress(ProgressEvent("pull", "pulling", "info"))
+        progress(ProgressEvent("done", "done", "ok"))
+        return RunResult("20260604_081200", tmp_path, {"n_waves": 0}, "empty")
+
+    app = appmod.create_app(repo_root=tmp_path)
+    app.state.manager._runner = fake_run
+    client = TestClient(app)
+    r = client.post("/runs", data={
+        "status": "AWAITING_PICK_AND_PACK", "customer_name": "",
+        "pallet_fraction_threshold": "0.65", "early_release_cartons": "25",
+        "run_group_col": "delivery_state"})
+    assert r.status_code == 200
+    assert "sse" in r.text.lower()           # the panel wires up an SSE source
+    assert "/stream" in r.text
+
+
+def test_post_runs_rejects_when_active(tmp_path):
+    from fastapi.testclient import TestClient
+    import web.app as appmod
+    import time
+    from wave_runner import RunResult, ProgressEvent
+
+    def slow(settings, progress):
+        time.sleep(0.3)
+        return RunResult("s", tmp_path, {}, "success")
+
+    app = appmod.create_app(repo_root=tmp_path)
+    app.state.manager._runner = slow
+    client = TestClient(app)
+    form = {"status": "X", "customer_name": "", "pallet_fraction_threshold": "0.7",
+            "early_release_cartons": "30", "run_group_col": "delivery_state"}
+    client.post("/runs", data=form)
+    r2 = client.post("/runs", data=form)
+    assert "in progress" in r2.text.lower()
+
+
+def test_stream_emits_events(tmp_path):
+    from fastapi.testclient import TestClient
+    import web.app as appmod
+    from wave_runner import RunResult, ProgressEvent
+
+    def fake_run(settings, progress):
+        progress(ProgressEvent("pull", "pulling orders", "info"))
+        progress(ProgressEvent("done", "all done", "ok"))
+        return RunResult("r", tmp_path, {"n_waves": 0}, "empty")
+
+    app = appmod.create_app(repo_root=tmp_path)
+    app.state.manager._runner = fake_run
+    client = TestClient(app)
+    form = {"status": "X", "customer_name": "", "pallet_fraction_threshold": "0.7",
+            "early_release_cartons": "30", "run_group_col": "delivery_state"}
+    job_id = client.post("/runs", data=form).headers["x-job-id"]
+    with client.stream("GET", f"/runs/job/{job_id}/stream") as s:
+        body = "".join(chunk for chunk in s.iter_text())
+    assert "pulling orders" in body
+    assert "event: done" in body

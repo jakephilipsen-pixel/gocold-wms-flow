@@ -5,14 +5,15 @@ Server-rendered (Jinja2) + HTMX + SSE. One process, no build step.
 """
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Form, Request
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from wave_runner import _load_dotenv
+from wave_runner import WaveRunSettings, _load_dotenv
 from . import runs as runs_mod
 from .jobs import JobManager
 
@@ -38,6 +39,52 @@ def create_app(repo_root: Path | None = None) -> FastAPI:
         return templates.TemplateResponse(request, "index.html", {
             "runs": runs_mod.list_runs(waves_base),
         })
+
+    @app.post("/runs", response_class=HTMLResponse)
+    def start_run(
+        request: Request,
+        status: str = Form("AWAITING_PICK_AND_PACK"),
+        customer_name: str = Form(""),
+        pallet_fraction_threshold: float = Form(0.70),
+        early_release_cartons: int = Form(30),
+        run_group_col: str = Form("delivery_state"),
+    ):
+        settings = WaveRunSettings(
+            repo_root=repo_root, status=status,
+            customer_name=customer_name or None,
+            pallet_fraction_threshold=pallet_fraction_threshold,
+            early_release_cartons=early_release_cartons,
+            run_group_col=run_group_col)
+        try:
+            job_id = manager.start(settings)
+        except JobManager.RunInProgressError:
+            return templates.TemplateResponse(request, "_run_busy.html", {})
+        resp = templates.TemplateResponse(
+            request, "_progress.html", {"job_id": job_id})
+        resp.headers["x-job-id"] = job_id
+        return resp
+
+    @app.get("/runs/job/{job_id}/stream")
+    def stream(job_id: str):
+        def gen():
+            sent = 0
+            while True:
+                job = manager.get(job_id)
+                while sent < len(job.events):
+                    e = job.events[sent]; sent += 1
+                    cls = {"ok": "ok", "error": "error", "info": "run"}.get(e.level, "")
+                    html = f'<div class="{cls}">{e.message}</div>'
+                    if e.stage == "done":
+                        link = (f'<a href="/runs/{job.run_id}">View run →</a>'
+                                if job.run_id and job.status != "failed" else "")
+                        yield (f"event: done\ndata: <div class='{cls}'>"
+                               f"{e.message}</div> {link}\n\n")
+                    else:
+                        yield f"event: message\ndata: {html}\n\n"
+                if job.done and sent >= len(job.events):
+                    break
+                time.sleep(0.1)
+        return StreamingResponse(gen(), media_type="text/event-stream")
 
     return app
 
