@@ -34,3 +34,26 @@ def test_run_result_holds_summary():
     assert r.status == "success"
     assert r.summary["n_waves"] == 3
     assert r.error is None
+
+
+def test_latest_file_picks_newest(tmp_path):
+    from wave_runner import _latest_file
+    old = tmp_path / "dims_2026-05-11.xlsx"
+    new = tmp_path / "dims_2026-05-13.xlsx"
+    old.write_text("a")
+    new.write_text("b")
+    import os, time
+    os.utime(old, (time.time() - 100, time.time() - 100))
+    assert _latest_file(tmp_path, "dims_*.xlsx") == new
+
+
+def test_load_dotenv_sets_missing_keys(tmp_path, monkeypatch):
+    from wave_runner import _load_dotenv
+    env = tmp_path / ".env"
+    env.write_text('FOO="bar"\n# comment\nBAZ=qux\n')
+    monkeypatch.delenv("FOO", raising=False)
+    monkeypatch.delenv("BAZ", raising=False)
+    _load_dotenv(env)
+    import os
+    assert os.environ["FOO"] == "bar"
+    assert os.environ["BAZ"] == "qux"
