@@ -39,12 +39,30 @@ PALLET_HEIGHT_TO_BAY_MM = {1: 800, 2: 1100, 3: 1500}
 
 
 def _find_col(df: pd.DataFrame, *candidates: str) -> str | None:
-    """Return the first column name from `candidates` present in df."""
+    """Resolve a column name tolerantly across template revisions.
+
+    Operators hand-edit these capture-sheet headers between captures (e.g.
+    "Inner Pack Qty" became "Inner Pack Qty per outer", and "Outer Carton
+    Qty per pallet" picked up a "...for putawsay" suffix). We match in two
+    widening tiers so trailing descriptive text doesn't break the loader:
+      1. exact (case-insensitive, trimmed)
+      2. header *starts with* a candidate (tolerates trailing notes)
+    Candidates are tried in order; within a tier, the first column (in sheet
+    order) to match wins. Prefix matching only runs when no exact match
+    exists, so well-formed templates are unaffected.
+    """
     cols_lower = {str(c).strip().lower(): c for c in df.columns}
+    # tier 1: exact
     for cand in candidates:
         match = cols_lower.get(cand.lower().strip())
         if match is not None:
             return match
+    # tier 2: prefix (header begins with the candidate)
+    for cand in candidates:
+        needle = cand.lower().strip()
+        for low, orig in cols_lower.items():
+            if low.startswith(needle):
+                return orig
     return None
 
 
@@ -126,7 +144,12 @@ def load_dimensions(path: Path) -> pd.DataFrame:
     col_cpp = _find_col(
         df, "Outer Carton Qty per pallet", "Outer Carton Qty",
     )
-    col_layers = _find_col(df, "layers per pallet", "Layers Per Pallet")
+    col_layers = _find_col(
+        df,
+        "layers per pallet", "Layers Per Pallet",
+        # observed June-2026 template (note the operator's "leyers" typo):
+        "total leyers per pallet", "total layers per pallet",
+    )
     col_tihi = _find_col(df, "Pallet TI x HI")
     col_height_bucket = _find_col(
         df, "Pallet height 1, 2 or 3", "Pallet Height", "Pallet Height Bucket",

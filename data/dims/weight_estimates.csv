@@ -1,0 +1,410 @@
+product_code,family,outer_l_mm,outer_w_mm,outer_h_mm,outer_weight_kg,outer_weight_kg_effective,weight_source,weight_confidence,weight_estimate_basis
+AE-2CB,AE,330,270,280,12.9,12.9,measured,measured,
+AE-2MC,AE,330,270,280,12.9,12.9,measured,measured,
+AE-2SC,AE,330,270,280,12.9,12.9,measured,measured,
+AE-BAL,AE,330,270,280,10.8,10.8,measured,measured,
+AE-BLA,AE,330,270,280,11.52,11.52,measured,measured,
+AE-BRO,AE,330,270,280,11.52,11.52,measured,measured,
+AE-BUR,AE,330,270,280,11.52,11.52,measured,measured,
+AE-ORA,AE,330,270,280,11.52,11.52,measured,measured,
+AE-QUI,AE,330,270,280,11.52,11.52,measured,measured,
+AE-SEA,AE,330,270,280,11.52,11.52,measured,measured,
+AE-SMI,AE,330,270,280,10.8,10.8,measured,measured,
+AE-SUP,AE,330,270,280,10.8,10.8,measured,measured,
+AE-TOF,AE,330,270,280,11.52,11.52,measured,measured,
+AE-TOT,AE,330,270,280,10.8,10.8,measured,measured,
+BB-1CH,BB,230,140,180,0.9,0.9,measured,measured,
+BB-1CL,BB,230,140,180,0.9,0.9,measured,measured,
+BB-1SS,BB,230,140,180,0.9,0.9,measured,measured,
+BB-2CH,BB,230,140,205,1.3,1.3,measured,measured,
+BB-2CL,BB,230,140,205,1.3,1.3,measured,measured,
+BB-2SS,BB,230,140,205,1.3,1.3,measured,measured,
+BB-3BCL,BB,230,140,180,1.1,1.1,measured,measured,
+BB-3SS,BB,230,140,180,1.1,1.1,measured,measured,
+BB-4BCL,BB,230,140,180,1.1,1.1,measured,measured,
+BB-5CH,BB,230,140,180,1.1,1.1,measured,measured,
+BB-5CL,BB,230,140,180,1.1,1.1,measured,measured,
+BB-5SS,BB,230,140,180,1.1,1.1,measured,measured,
+BE-1CH,BE,330,260,230,13.0,13.0,measured,measured,
+BE-1CW,BE,330,230,230,13.0,13.0,measured,measured,
+BE-3CH,BE,350,245,155,8.5,8.5,measured,measured,
+BE-3CW,BE,350,245,155,8.5,8.5,measured,measured,
+BF-GRC,BF,335,195,270,2.0,2.0,measured,measured,
+BF-GTN,BF,335,195,270,2.0,2.0,measured,measured,
+BF-KAB,BF,335,195,270,2.0,2.0,measured,measured,
+BF-KPE,BF,335,195,270,2.0,2.0,measured,measured,
+BF-KRM,BF,335,195,270,2.0,2.0,measured,measured,
+BF-MAM,BF,335,195,270,2.0,2.0,measured,measured,
+BI-BOM,BI,205,145,110,2.3,2.3,measured,measured,
+BI-CEH,BI,205,145,110,2.3,2.3,measured,measured,
+BI-CHO,BI,205,145,110,2.3,2.3,measured,measured,
+BI-CMI,BI,205,145,110,2.3,2.3,measured,measured,
+BI-COI,BI,175,95,165,2.1,2.1,measured,measured,
+BI-CPE,BI,205,140,95,2.4,2.4,measured,measured,
+BI-CSU,BI,230,160,160,4.5,4.5,measured,measured,
+BI-HON,BI,180,95,165,2.4,2.4,measured,measured,
+BI-PES,BI,205,140,95,2.4,2.4,measured,measured,
+BI-SRI,BI,215,110,210,4.2,4.2,measured,measured,
+BI-SUG,BI,230,160,160,4.5,4.5,measured,measured,
+BI-VSU,BI,230,160,160,4.5,4.5,measured,measured,
+BW-3SP,BW,330,250,300,14.5,14.5,measured,measured,
+BW-3ST,BW,330,250,300,14.5,14.5,measured,measured,
+BW-5SP,BW,355,285,280,17.5,17.5,measured,measured,
+BW-5ST,BW,355,285,280,17.5,17.5,measured,measured,
+BW-7SP,BW,375,255,220,14.5,14.5,measured,measured,
+BW-7ST,BW,375,255,220,14.5,14.5,measured,measured,
+DW-5GR,DW,235,180,155,4.2,4.2,measured,measured,
+DW-5LI,DW,235,180,155,4.2,4.2,measured,measured,
+DW-5PE,DW,235,180,155,4.2,4.2,measured,measured,
+DW-5RA,DW,235,180,155,4.2,4.2,measured,measured,
+FA-CHI,FA,270,210,130,5.0,5.0,measured,measured,
+FA-LEM,FA,270,210,130,5.0,5.0,measured,measured,
+FA-MAN,FA,270,210,130,5.0,5.0,measured,measured,
+FB-PSM,FB,220,145,170,0.9,0.9,measured,measured,
+FD-1RG,FD,375,260,175,3.5,3.5,measured,measured,
+FD-1SP,FD,375,260,175,3.5,3.5,measured,measured,
+FD-2LO,FD,250,160,195,0.9,0.9,measured,measured,
+FD-2PM,FD,250,160,195,0.9,0.9,measured,measured,
+FD-2SC,FD,250,160,195,0.9,0.9,measured,measured,
+FD-3LO,FD,375,260,175,3.5,3.5,measured,measured,
+FD-4CC,FD,375,260,290,4.5,4.5,measured,measured,
+FD-4FC,FD,375,260,290,4.5,4.5,measured,measured,
+FD-5DS,FD,375,260,290,4.5,4.5,measured,measured,
+FD-5MB,FD,375,260,290,4.5,4.5,measured,measured,
+FD-5MR,FD,375,260,290,4.5,4.5,measured,measured,
+FD-5WR,FD,375,260,290,4.5,4.5,measured,measured,
+FD-BAR,FD,375,260,290,4.5,4.5,measured,measured,
+FD-FGS,FD,375,260,290,4.5,4.5,measured,measured,
+FD-PCG,FD,375,260,290,4.5,4.5,measured,measured,
+FD-PPM,FD,375,260,290,4.5,4.5,measured,measured,
+FD-RGF,FD,375,260,290,4.5,4.5,measured,measured,
+FD-SCB,FD,375,260,290,4.5,4.5,measured,measured,
+FD-SFC,FD,375,260,290,4.5,4.5,measured,measured,
+FD-SPH,FD,375,260,290,4.5,4.5,measured,measured,
+FD-SVG,FD,375,260,290,4.5,4.5,measured,measured,
+FD-VKO,FD,375,260,290,4.5,4.5,measured,measured,
+FJ-5BMB,FJ,375,135,230,1.6,1.6,measured,measured,
+FJ-5GHG,FJ,375,135,230,1.6,1.6,measured,measured,
+FJ-5GMA,FJ,375,135,230,1.6,1.6,measured,measured,
+FJ-5PCG,FJ,375,135,230,1.6,1.6,measured,measured,
+FJ-5POG,FJ,375,135,230,1.6,1.6,measured,measured,
+FJ-FSB,FJ,320,230,275,3.0,3.0,measured,measured,
+FJ-FSH,FJ,320,230,275,3.0,3.0,measured,measured,
+FJ-FSP,FJ,320,230,275,3.0,3.0,measured,measured,
+FP-2AC,FP,290,140,165,4.0,4.0,measured,measured,
+FP-2AM,FP,290,140,165,4.0,4.0,measured,measured,
+FP-2ANS,FP,290,140,165,4.0,4.0,measured,measured,
+FP-2OC,FP,290,140,165,4.0,4.0,measured,measured,
+FP-3AL,FP,215,175,175,4.0,4.0,measured,measured,
+FP-3AM,FP,215,175,175,4.0,4.0,measured,measured,
+FP-3OA,FP,215,175,175,4.0,4.0,measured,measured,
+FP-3PR,FP,215,175,175,4.0,4.0,measured,measured,
+FP-3ST,FP,215,175,175,4.0,4.0,measured,measured,
+FP-4DIC,FP,290,140,165,4.0,4.0,measured,measured,
+FP-OCD,FP,280,160,205,4.8,4.8,measured,measured,
+FP-PCD,FP,235,185,170,3.5,3.5,measured,measured,
+FT-2IT,FT,320,215,90,4.5,4.5,measured,measured,
+FT-2LI,FT,320,215,90,4.5,4.5,measured,measured,
+FT-2LM,FT,320,215,90,4.5,4.5,measured,measured,
+FT-2MT,FT,320,215,90,4.5,4.5,measured,measured,
+FT-5ET,FT,280,145,275,,8.11,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 11.2 L
+FT-5GA,FT,280,145,275,,8.11,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 11.2 L
+FT-5GB,FT,280,145,275,,8.11,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 11.2 L
+FT-5IT,FT,280,145,275,,8.11,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 11.2 L
+FT-5LM,FT,280,145,275,,8.11,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 11.2 L
+FT-5LR,FT,280,145,275,,8.11,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 11.2 L
+FT-5LT,FT,280,145,275,,8.11,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 11.2 L
+FT-5LY,FT,280,145,275,,8.11,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 11.2 L
+FT-5MT,FT,280,145,275,,8.11,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 11.2 L
+FT-5PG,FT,280,145,275,,8.11,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 11.2 L
+FT-6BO,FT,325,220,200,,10.39,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 14.3 L
+FT-6GA,FT,325,220,200,,10.39,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 14.3 L
+FT-6GB,FT,325,220,200,,10.39,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 14.3 L
+FT-6LY,FT,325,220,200,,10.39,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 14.3 L
+FT-6PG,FT,325,220,200,,10.39,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 14.3 L
+FT-6SW,FT,325,220,200,,10.39,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 14.3 L
+FT-7GB,FT,330,215,140,,7.22,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 9.9 L
+FT-7LY,FT,330,215,140,,7.22,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 9.9 L
+FT-7PG,FT,330,215,140,,7.22,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 9.9 L
+FT-7SL,FT,330,215,140,,7.22,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 9.9 L
+FT-ETW,FT,325,220,200,,10.39,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 14.3 L
+FT-ITW,FT,325,220,200,,10.39,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 14.3 L
+FT-LTW,FT,325,220,200,,10.39,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 14.3 L
+FT-MLT,FT,325,220,200,,10.39,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 14.3 L
+FT-MTW,FT,325,220,200,,10.39,estimated_family,medium,family FT median density 0.727 kg/L (n=4) × 14.3 L
+GP-1OR,GP,145,125,230,,1.6,estimated_global,low,global median density 0.384 kg/L × 4.2 L (family GP has only 0 measured)
+GP-1SS,GP,145,125,230,,1.6,estimated_global,low,global median density 0.384 kg/L × 4.2 L (family GP has only 0 measured)
+GP-2RM,GP,255,190,160,,2.98,estimated_global,low,global median density 0.384 kg/L × 7.8 L (family GP has only 0 measured)
+GP-2SM,GP,255,190,160,,2.98,estimated_global,low,global median density 0.384 kg/L × 7.8 L (family GP has only 0 measured)
+GP-2VM,GP,255,190,160,,2.98,estimated_global,low,global median density 0.384 kg/L × 7.8 L (family GP has only 0 measured)
+GP-AR,GP,255,190,160,,2.98,estimated_global,low,global median density 0.384 kg/L × 7.8 L (family GP has only 0 measured)
+GP-CCH,GP,255,190,160,,2.98,estimated_global,low,global median density 0.384 kg/L × 7.8 L (family GP has only 0 measured)
+GP-CH,GP,255,190,160,,2.98,estimated_global,low,global median density 0.384 kg/L × 7.8 L (family GP has only 0 measured)
+GP-FM,GP,255,190,160,,2.98,estimated_global,low,global median density 0.384 kg/L × 7.8 L (family GP has only 0 measured)
+GP-MAR,GP,255,190,160,,2.98,estimated_global,low,global median density 0.384 kg/L × 7.8 L (family GP has only 0 measured)
+GP-NOI,GP,255,190,160,,2.98,estimated_global,low,global median density 0.384 kg/L × 7.8 L (family GP has only 0 measured)
+GP-OI,GP,255,190,160,,2.98,estimated_global,low,global median density 0.384 kg/L × 7.8 L (family GP has only 0 measured)
+GP-SC,GP,255,190,160,,2.98,estimated_global,low,global median density 0.384 kg/L × 7.8 L (family GP has only 0 measured)
+GP-SEA,GP,255,190,160,,2.98,estimated_global,low,global median density 0.384 kg/L × 7.8 L (family GP has only 0 measured)
+GP-SSC,GP,255,190,160,,2.98,estimated_global,low,global median density 0.384 kg/L × 7.8 L (family GP has only 0 measured)
+GP-VA,GP,255,190,160,,2.98,estimated_global,low,global median density 0.384 kg/L × 7.8 L (family GP has only 0 measured)
+HL-4CB,HL,255,230,150,3.0,3.0,measured,measured,
+HL-4CC,HL,255,230,150,3.0,3.0,measured,measured,
+HL-5CC,HL,290,260,145,3.0,3.0,measured,measured,
+HL-5CO,HL,290,260,145,3.0,3.0,measured,measured,
+HL-5HO,HL,290,260,145,3.0,3.0,measured,measured,
+HL-5MC,HL,290,260,145,3.0,3.0,measured,measured,
+HL-5SM,HL,290,260,145,3.0,3.0,measured,measured,
+HL-6HH,HL,315,115,180,0.9,0.9,measured,measured,
+HL-6SC,HL,315,115,180,0.9,0.9,measured,measured,
+HL-6VA,HL,315,115,180,0.9,0.9,measured,measured,
+HL-7DC,HL,255,230,150,2.2,2.2,measured,measured,
+HL-7GC,HL,255,230,150,2.2,2.2,measured,measured,
+HL-BCC,HL,255,230,150,2.2,2.2,measured,measured,
+HL-BCD,HL,255,230,150,2.2,2.2,measured,measured,
+HL-BDC,HL,255,230,150,2.2,2.2,measured,measured,
+HL-BDO,HL,255,230,150,2.2,2.2,measured,measured,
+HL-BHH,HL,255,230,150,2.2,2.2,measured,measured,
+HL-BLN,HL,255,230,150,2.2,2.2,measured,measured,
+HL-BMS,HL,255,230,150,2.2,2.2,measured,measured,
+HL-BPB,HL,255,230,150,2.2,2.2,measured,measured,
+HL-BWC,HL,255,230,150,2.2,2.2,measured,measured,
+HL-WBCH,HL,365,170,225,3.2,3.2,measured,measured,
+HL-WSCA,HL,365,170,225,3.2,3.2,measured,measured,
+HN-3PA,HN,410,275,140,9.5,9.5,measured,measured,
+HN-HDH,HN,410,275,140,9.5,9.5,measured,measured,
+HN-LAG,HN,410,275,140,9.5,9.5,measured,measured,
+HN-XPA,HN,410,275,140,9.5,9.5,measured,measured,
+HP-FCP,HP,380,285,190,,7.9,estimated_global,low,global median density 0.384 kg/L × 20.6 L (family HP has only 0 measured)
+HP-FTS,HP,380,285,190,,7.9,estimated_global,low,global median density 0.384 kg/L × 20.6 L (family HP has only 0 measured)
+HP-GBC,HP,380,285,190,,7.9,estimated_global,low,global median density 0.384 kg/L × 20.6 L (family HP has only 0 measured)
+HP-GBS,HP,380,285,190,,7.9,estimated_global,low,global median density 0.384 kg/L × 20.6 L (family HP has only 0 measured)
+HP-PCS,HP,380,285,190,,7.9,estimated_global,low,global median density 0.384 kg/L × 20.6 L (family HP has only 0 measured)
+HP-SGH,HP,380,285,190,,7.9,estimated_global,low,global median density 0.384 kg/L × 20.6 L (family HP has only 0 measured)
+HP-SHP,HP,380,285,190,,7.9,estimated_global,low,global median density 0.384 kg/L × 20.6 L (family HP has only 0 measured)
+KC-2CO,KC,275,205,125,4.3,4.3,measured,measured,
+KC-2GI,KC,275,205,125,4.3,4.3,measured,measured,
+KC-2LE,KC,275,205,125,4.3,4.3,measured,measured,
+KC-2RA,KC,275,205,125,4.3,4.3,measured,measured,
+KC-GIN,KC,300,180,220,,7.25,estimated_family,medium,family KC median density 0.610 kg/L (n=4) × 11.9 L
+KC-KCO,KC,300,180,220,,7.25,estimated_family,medium,family KC median density 0.610 kg/L (n=4) × 11.9 L
+KC-LEM,KC,300,180,220,,7.25,estimated_family,medium,family KC median density 0.610 kg/L (n=4) × 11.9 L
+KC-RAZ,KC,300,180,220,,7.25,estimated_family,medium,family KC median density 0.610 kg/L (n=4) × 11.9 L
+KC-SFK,KC,300,180,220,,7.25,estimated_family,medium,family KC median density 0.610 kg/L (n=4) × 11.9 L
+KC-SFL,KC,300,180,220,,7.25,estimated_family,medium,family KC median density 0.610 kg/L (n=4) × 11.9 L
+KJ-APP,KJ,245,185,180,6.3,6.3,measured,measured,
+KJ-BAA,KJ,245,185,180,6.3,6.3,measured,measured,
+KJ-GUA,KJ,245,185,180,6.3,6.3,measured,measured,
+KJ-LGT,KJ,245,185,180,6.3,6.3,measured,measured,
+KJ-MOA,KJ,245,185,180,6.3,6.3,measured,measured,
+KJ-ORA,KJ,245,185,180,6.3,6.3,measured,measured,
+KO-1CC,KO,260,185,265,6.5,6.5,measured,measured,
+KO-1LC,KO,260,185,265,6.5,6.5,measured,measured,
+KO-1MA,KO,260,185,265,6.5,6.5,measured,measured,
+KO-2BC,KO,290,120,175,0.9,0.9,measured,measured,
+KO-2CC,KO,290,120,175,0.9,0.9,measured,measured,
+KO-2MS,KO,290,120,175,0.9,0.9,measured,measured,
+KO-3CB,KO,290,120,175,0.9,0.9,measured,measured,
+KO-3CC,KO,290,120,175,0.9,0.9,measured,measured,
+KO-3GB,KO,290,120,175,0.9,0.9,measured,measured,
+KO-4CD,KO,290,120,175,0.9,0.9,measured,measured,
+KO-4SC,KO,290,120,175,0.9,0.9,measured,measured,
+NE-BIG,NE,240,180,240,4.0,4.0,measured,measured,
+NE-EAG,NE,240,180,240,4.0,4.0,measured,measured,
+NE-GEN,NE,240,180,240,4.0,4.0,measured,measured,
+NE-SEA,NE,240,180,240,4.0,4.0,measured,measured,
+NE-SWE,NE,240,180,240,4.0,4.0,measured,measured,
+NE-TRO,NE,240,180,240,4.0,4.0,measured,measured,
+NE-UPB,NE,240,180,240,4.0,4.0,measured,measured,
+NL-3CG,NL,330,230,145,6.5,6.5,measured,measured,
+NL-3IS,NL,330,230,145,6.5,6.5,measured,measured,
+NL-3MA,NL,330,230,145,6.5,6.5,measured,measured,
+NL-3MS,NL,330,230,145,6.5,6.5,measured,measured,
+NY-1AL,NY,310,310,135,4.1,4.1,measured,measured,
+NY-ABB,NY,225,155,110,1.5,1.5,measured,measured,
+NY-ACB,NY,225,155,110,1.5,1.5,measured,measured,
+NY-ACC,NY,225,155,110,1.5,1.5,measured,measured,
+NY-ALB,NY,225,155,110,1.5,1.5,measured,measured,
+NY-CAB,NY,225,155,110,1.5,1.5,measured,measured,
+NY-CAL,NY,225,155,110,1.5,1.5,measured,measured,
+NY-HAB,NY,225,155,110,1.5,1.5,measured,measured,
+NY-MAB,NY,225,155,110,1.5,1.5,measured,measured,
+NY-OAL,NY,230,160,95,1.3,1.3,measured,measured,
+NY-PIB,NY,225,155,110,1.5,1.5,measured,measured,
+OA-6BAR,OA,230,165,215,6.5,6.5,measured,measured,
+OA-6CHO,OA,230,165,215,6.5,6.5,measured,measured,
+OA-6GAN,OA,230,165,215,6.5,6.5,measured,measured,
+OA-BAR,OA,230,165,215,6.5,6.5,measured,measured,
+OA-CHO,OA,230,165,215,6.5,6.5,measured,measured,
+OA-GAN,OA,230,165,215,6.5,6.5,measured,measured,
+OS-JAR,OS,330,230,125,1.6,1.6,measured,measured,
+OS-RGS,OS,260,180,100,0.8,0.8,measured,measured,
+OS-SSF,OS,400,300,120,2.8,2.8,measured,measured,
+PC-3CI,PC,500,340,130,1.2,1.2,measured,measured,
+PC-3MA,PC,500,340,130,1.2,1.2,measured,measured,
+PC-4CI,PC,500,340,130,1.2,1.2,measured,measured,
+PC-4MA,PC,500,340,130,1.2,1.2,measured,measured,
+PC-4RT,PC,500,340,130,1.2,1.2,measured,measured,
+PC-5DP,PC,450,345,250,2.2,2.2,measured,measured,
+PC-5MS,PC,450,345,250,2.2,2.2,measured,measured,
+PC-5PG,PC,450,345,250,2.2,2.2,measured,measured,
+PC-5SM,PC,450,345,250,2.2,2.2,measured,measured,
+PC-CHI,PC,450,345,250,2.2,2.2,measured,measured,
+PC-CID,PC,450,345,250,2.2,2.2,measured,measured,
+PC-GAR,PC,450,345,250,1.8,1.8,measured,measured,
+PC-MSS,PC,450,345,250,2.2,2.2,measured,measured,
+PC-ONC,PC,450,345,250,2.2,2.2,measured,measured,
+PC-ROS,PC,450,345,250,2.2,2.2,measured,measured,
+PC-SPO,PC,450,345,250,2.2,2.2,measured,measured,
+PC-TCH,PC,450,345,250,2.2,2.2,measured,measured,
+PC-TSA,PC,450,345,250,2.2,2.2,measured,measured,
+RD-1CC,RD,300,200,200,7.1,7.1,measured,measured,
+RD-1SS,RD,300,200,200,7.1,7.1,measured,measured,
+RD-2KG,RD,530,185,310,13.0,13.0,measured,measured,
+RD-5CH,RD,290,195,225,1.5,1.5,measured,measured,
+RD-5PJ,RD,290,195,225,1.5,1.5,measured,measured,
+RD-BRI,RD,280,220,105,1.0,1.0,measured,measured,
+RD-BRM,RD,280,220,105,1.0,1.0,measured,measured,
+RD-BRS,RD,275,225,275,3.0,3.0,measured,measured,
+RD-CC,RD,295,220,140,5.2,5.2,measured,measured,
+RD-CHC,RD,290,195,225,1.5,1.5,measured,measured,
+RD-CHE,RD,315,210,165,3.0,3.0,measured,measured,
+RD-CHO,RD,290,195,225,1.5,1.5,measured,measured,
+RD-CR,RD,295,220,140,5.2,5.2,measured,measured,
+RD-DBL,RD,315,210,165,3.0,3.0,measured,measured,
+RD-MBO,RD,315,210,165,3.0,3.0,measured,measured,
+RD-ORG,RD,315,210,165,3.0,3.0,measured,measured,
+RD-SAL,RD,315,210,165,3.0,3.0,measured,measured,
+RD-SS,RD,295,220,140,5.2,5.2,measured,measured,
+RK-1GL,RK,275,180,300,,5.7,estimated_global,low,global median density 0.384 kg/L × 14.8 L (family RK has only 0 measured)
+RK-1PA,RK,275,180,300,,5.7,estimated_global,low,global median density 0.384 kg/L × 14.8 L (family RK has only 0 measured)
+RK-1RL,RK,275,180,300,,5.7,estimated_global,low,global median density 0.384 kg/L × 14.8 L (family RK has only 0 measured)
+RK-1WB,RK,275,180,300,,5.7,estimated_global,low,global median density 0.384 kg/L × 14.8 L (family RK has only 0 measured)
+RK-2BO,RK,250,130,220,,2.75,estimated_global,low,global median density 0.384 kg/L × 7.2 L (family RK has only 0 measured)
+RK-2GU,RK,250,130,220,,2.75,estimated_global,low,global median density 0.384 kg/L × 7.2 L (family RK has only 0 measured)
+RK-2LY,RK,250,130,220,,2.75,estimated_global,low,global median density 0.384 kg/L × 7.2 L (family RK has only 0 measured)
+RK-2PA,RK,250,130,220,,2.75,estimated_global,low,global median density 0.384 kg/L × 7.2 L (family RK has only 0 measured)
+RK-2PI,RK,250,130,220,,2.75,estimated_global,low,global median density 0.384 kg/L × 7.2 L (family RK has only 0 measured)
+RK-2RA,RK,250,130,220,,2.75,estimated_global,low,global median density 0.384 kg/L × 7.2 L (family RK has only 0 measured)
+RK-3AP,RK,250,185,220,,3.91,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-3CP,RK,250,185,220,,3.91,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-3GI,RK,250,185,220,,3.91,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-3LM,RK,250,185,220,,3.91,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-3MP,RK,250,185,220,,3.91,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-3OS,RK,250,185,220,,3.91,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-3PA,RK,250,185,220,,3.91,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-3PE,RK,250,185,220,,3.91,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-3PG,RK,250,185,220,,3.91,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-3RL,RK,250,185,220,,3.91,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-3WB,RK,250,185,220,,3.91,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-4LS,RK,250,130,220,,2.75,estimated_global,low,global median density 0.384 kg/L × 7.2 L (family RK has only 0 measured)
+RK-4PC,RK,250,130,220,,2.75,estimated_global,low,global median density 0.384 kg/L × 7.2 L (family RK has only 0 measured)
+RK-4YM,RK,250,130,220,,2.75,estimated_global,low,global median density 0.384 kg/L × 7.2 L (family RK has only 0 measured)
+RK-5BO,RK,245,165,260,,4.04,estimated_global,low,global median density 0.384 kg/L × 10.5 L (family RK has only 0 measured)
+RK-5GI,RK,245,165,260,,4.04,estimated_global,low,global median density 0.384 kg/L × 10.5 L (family RK has only 0 measured)
+RK-5MP,RK,245,165,260,,4.04,estimated_global,low,global median density 0.384 kg/L × 10.5 L (family RK has only 0 measured)
+RK-5OS,RK,245,165,260,,4.04,estimated_global,low,global median density 0.384 kg/L × 10.5 L (family RK has only 0 measured)
+RK-5PG,RK,245,165,260,,4.04,estimated_global,low,global median density 0.384 kg/L × 10.5 L (family RK has only 0 measured)
+RK-5PIL,RK,245,165,260,,4.04,estimated_global,low,global median density 0.384 kg/L × 10.5 L (family RK has only 0 measured)
+RK-5PO,RK,245,165,260,,4.04,estimated_global,low,global median density 0.384 kg/L × 10.5 L (family RK has only 0 measured)
+RK-5RL,RK,245,165,260,,4.04,estimated_global,low,global median density 0.384 kg/L × 10.5 L (family RK has only 0 measured)
+RK-5WB,RK,245,165,260,,4.04,estimated_global,low,global median density 0.384 kg/L × 10.5 L (family RK has only 0 measured)
+RK-6DI,RK,160,120,105,,0.77,estimated_global,low,global median density 0.384 kg/L × 2.0 L (family RK has only 0 measured)
+RK-6EN,RK,160,120,105,,0.77,estimated_global,low,global median density 0.384 kg/L × 2.0 L (family RK has only 0 measured)
+RK-6IM,RK,160,120,105,,0.77,estimated_global,low,global median density 0.384 kg/L × 2.0 L (family RK has only 0 measured)
+RK-7BO,RK,275,180,300,,5.7,estimated_global,low,global median density 0.384 kg/L × 14.8 L (family RK has only 0 measured)
+RK-7LY,RK,275,180,300,,5.7,estimated_global,low,global median density 0.384 kg/L × 14.8 L (family RK has only 0 measured)
+RK-7RA,RK,275,180,300,,5.7,estimated_global,low,global median density 0.384 kg/L × 14.8 L (family RK has only 0 measured)
+RK-8GO,RK,250,130,220,,2.75,estimated_global,low,global median density 0.384 kg/L × 7.2 L (family RK has only 0 measured)
+RK-8LI,RK,250,130,220,,2.75,estimated_global,low,global median density 0.384 kg/L × 7.2 L (family RK has only 0 measured)
+RK-8ML,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-8MO,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-9BO,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-9GU,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-9LY,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-9PA,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-9PG,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-9PI,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-9RA,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-9ST,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-9TR,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-9WA,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-MAP,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-MCP,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-MGI,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-MLM,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-MMP,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-MOS,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-MPA,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-MPE,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-MPG,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-MPIL,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-MPO,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-MRL,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-MWB,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-SBL,RK,250,185,220,,3.91,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+RK-SMB,RK,330,220,140,,3.9,estimated_global,low,global median density 0.384 kg/L × 10.2 L (family RK has only 0 measured)
+SNK-1BQ,SNK,490,285,230,,12.33,estimated_global,low,global median density 0.384 kg/L × 32.1 L (family SNK has only 2 measured)
+SNK-1CH,SNK,490,285,230,,12.33,estimated_global,low,global median density 0.384 kg/L × 32.1 L (family SNK has only 2 measured)
+SNK-1SA,SNK,490,285,230,,12.33,estimated_global,low,global median density 0.384 kg/L × 32.1 L (family SNK has only 2 measured)
+SNK-1SC,SNK,490,285,230,,12.33,estimated_global,low,global median density 0.384 kg/L × 32.1 L (family SNK has only 2 measured)
+SNK-1SO,SNK,490,285,230,,12.33,estimated_global,low,global median density 0.384 kg/L × 32.1 L (family SNK has only 2 measured)
+SNK-1VI,SNK,490,285,230,,12.33,estimated_global,low,global median density 0.384 kg/L × 32.1 L (family SNK has only 2 measured)
+SNK-2SA,SNK,375,240,255,1.4,1.4,measured,measured,
+SNK-2VI,SNK,375,240,255,1.4,1.4,measured,measured,
+TC-1MC,TC,255,130,80,1.8,1.8,measured,measured,
+TC-1MI,TC,255,130,80,1.8,1.8,measured,measured,
+TC-5MC,TC,590,390,220,10.0,10.0,measured,measured,
+TC-5MI,TC,590,390,220,10.0,10.0,measured,measured,
+TC-DAR,TC,280,180,90,3.0,3.0,measured,measured,
+TC-DAS,TC,280,180,90,3.0,3.0,measured,measured,
+TC-DMP,TC,280,180,90,3.0,3.0,measured,measured,
+TC-MAN,TC,280,180,90,3.0,3.0,measured,measured,
+TC-MCC,TC,280,180,90,3.0,3.0,measured,measured,
+TC-MCS,TC,280,180,90,3.0,3.0,measured,measured,
+TC-MHA,TC,280,180,90,3.0,3.0,measured,measured,
+TC-MIL,TC,280,180,90,3.0,3.0,measured,measured,
+TSM-1CE,TSM,225,155,105,2.9,2.9,measured,measured,
+TSM-1GT,TSM,225,155,105,2.9,2.9,measured,measured,
+TSM-1OB,TSM,225,155,105,2.9,2.9,measured,measured,
+TSM-1OC,TSM,225,155,105,2.9,2.9,measured,measured,
+TSM-1TE,TSM,225,155,105,2.9,2.9,measured,measured,
+TSM-2OB,TSM,270,185,120,5.2,5.2,measured,measured,
+TSM-2TE,TSM,270,185,120,5.2,5.2,measured,measured,
+TSM-BBB,TSM,275,230,145,2.4,2.4,measured,measured,
+TSM-BGH,TSM,275,230,145,2.4,2.4,measured,measured,
+TSM-BS,TSM,275,230,145,2.4,2.4,measured,measured,
+TSM-CBB,TSM,275,230,145,2.4,2.4,measured,measured,
+TSM-CGH,TSM,275,230,145,2.4,2.4,measured,measured,
+TSM-CS,TSM,275,230,145,2.4,2.4,measured,measured,
+TSM-MUS,TSM,275,230,145,2.4,2.4,measured,measured,
+TSM-OFG,TSM,275,230,145,2.4,2.4,measured,measured,
+TSM-PEP,TSM,275,230,145,2.4,2.4,measured,measured,
+TSM-RTB,TSM,275,230,145,2.4,2.4,measured,measured,
+TSM-RTC,TSM,275,230,145,2.4,2.4,measured,measured,
+TSM-RWJ,TSM,275,230,145,2.4,2.4,measured,measured,
+TSM-SNA,TSM,275,230,145,2.4,2.4,measured,measured,
+TSM-TLW,TSM,225,155,105,2.9,2.9,measured,measured,
+TSM-UM,TSM,275,230,145,2.4,2.4,measured,measured,
+TSM-VS,TSM,275,230,145,2.4,2.4,measured,measured,
+TSP-1MA,TSP,380,260,145,5.5,5.5,measured,measured,
+TSP-1SA,TSP,380,260,145,5.8,5.8,measured,measured,
+TSP-1TU,TSP,380,260,145,5.8,5.8,measured,measured,
+TSP-2MX,TSP,275,230,145,2.4,2.4,measured,measured,
+TSP-2OR,TSP,275,230,145,2.4,2.4,measured,measured,
+TSP-2SP,TSP,275,230,145,2.4,2.4,measured,measured,
+TSP-3SF,TSP,390,290,255,6.5,6.5,measured,measured,
+TSP-3SP,TSP,350,250,275,6.5,6.5,measured,measured,
+TSP-3SS,TSP,240,130,290,6.25,6.25,measured,measured,
+TSP-4GV,TSP,230,160,140,2.0,2.0,measured,measured,
+TSP-4OC,TSP,230,160,140,2.0,2.0,measured,measured,
+TSP-4TB,TSP,230,160,140,2.0,2.0,measured,measured,
+TSP-ANC,TSP,330,265,230,3.2,3.2,measured,measured,
+TSP-JTU,TSP,215,145,105,104.0,104.0,measured,measured,
+TSP-MAC,TSP,380,260,145,5.8,5.8,measured,measured,
+TSP-OYS,TSP,225,140,80,1.3,1.3,measured,measured,
+TSP-SAR,TSP,380,260,145,5.8,5.8,measured,measured,
+TSP-SMO,TSP,380,260,145,5.8,5.8,measured,measured,
+TSP-SPI,TSP,380,260,145,5.8,5.8,measured,measured,
+TSP-TU3,TSP,225,225,185,4.0,4.0,measured,measured,
+TSP-TUN,TSP,380,260,145,5.8,5.8,measured,measured,

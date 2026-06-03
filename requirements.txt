@@ -3,6 +3,7 @@ pandas>=2.2.0
 pyarrow>=16.0.0
 matplotlib>=3.8.0
 openpyxl>=3.1.0
+odfpy>=1.4.1        # read the live .ods dim-capture sheet
 reportlab>=4.0
 
 # dev / tests
