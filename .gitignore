@@ -30,3 +30,6 @@ venv/
 .idea/
 *.swp
 .DS_Store
+
+# Superpowers brainstorm working dir
+.superpowers/

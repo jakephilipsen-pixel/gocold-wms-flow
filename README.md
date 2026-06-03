@@ -77,6 +77,21 @@ Output goes to `data/processed/<timestamp>/` with:
 Output lands in `data/raw/*.parquet` along with a `manifest_*.json`
 documenting the extract window. These files are gitignored.
 
+## Wave Pick Console (web UI)
+
+A local web console wrapping `scripts/generate_waves.py`. Trigger a live
+wave generation run, watch progress stream, and browse/download the
+resulting waves.
+
+```bash
+python scripts/serve_web.py     # then open http://127.0.0.1:8000
+```
+
+Read-only against CartonCloud — it generates paperwork only. Settings
+exposed: status, customer, pallet-fraction-threshold, early-release-cartons,
+run-group. One run at a time. The CLI (`scripts/generate_waves.py`) still
+works unchanged and shares the same pipeline core (`src/wave_runner.py`).
+
 ## Safety
 
 - **Read-only by default.** The client refuses POST/PUT/PATCH/DELETE
