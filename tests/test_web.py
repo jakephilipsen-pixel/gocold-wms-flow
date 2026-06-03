@@ -74,3 +74,26 @@ def test_file_path_rejects_traversal(tmp_path):
     good = file_path(tmp_path, "20260604_081200", "VIC-bench-01",
                      "VIC-bench-01_picks.csv")
     assert good.exists()
+
+
+@pytest.fixture
+def client(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    import web.app as appmod
+    app = appmod.create_app(repo_root=tmp_path)
+    return TestClient(app)
+
+
+def test_index_renders_form(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "Wave Pick Console" in r.text
+    assert "AWAITING_PICK_AND_PACK" in r.text
+    assert 'name="pallet_fraction_threshold"' in r.text
+
+
+def test_index_lists_existing_runs(tmp_path, client):
+    base = tmp_path / "data" / "processed" / "waves"
+    _make_run(base, "20260604_081200")
+    r = client.get("/")
+    assert "20260604_081200" in r.text
