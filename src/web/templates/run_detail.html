@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="crumb"><a href="/">← Console</a> / Run {{ run.run_id }}</div>
+<div class="cards">
+  <div class="stat"><div class="n">{{ run.summary.n_waves }}</div><div class="l">Waves</div></div>
+  <div class="stat"><div class="n">{{ run.summary.n_orders_total }}</div><div class="l">Orders</div></div>
+  <div class="stat"><div class="n">{{ run.summary.n_pick_lines_total }}</div><div class="l">Pick lines</div></div>
+  <div class="stat"><div class="n">{{ run.summary.n_orders_skipped }}</div><div class="l">Skipped</div></div>
+</div>
+<section class="card mb">
+  <table class="tbl">
+    <tr><th>Wave</th><th>Stream</th><th>Run group</th><th>Orders</th><th>Lines</th>
+        <th>Cartons</th><th>Walk</th><th>Files</th></tr>
+    {% for w in run.waves %}
+    {% set kind = "bench" if "bench" in w.stream else "bypass" %}
+    <tr>
+      <td><a href="/runs/{{ run.run_id }}/waves/{{ w.wave_id }}">{{ w.wave_id }}</a></td>
+      <td><span class="pill {{ kind }}">{{ kind }}</span></td>
+      <td>{{ w.run_group }}</td><td>{{ w.n_orders }}</td><td>{{ w.total_lines }}</td>
+      <td>{{ w.total_cartons }}</td><td>{{ w.estimated_walk_m }} m</td>
+      <td>
+        <a href="/runs/{{ run.run_id }}/files/{{ w.wave_id }}/{{ w.wave_id }}_picksheet.pdf">PDF</a> ·
+        <a href="/runs/{{ run.run_id }}/files/{{ w.wave_id }}/{{ w.wave_id }}_picks.csv">picks</a> ·
+        <a href="/runs/{{ run.run_id }}/files/{{ w.wave_id }}/{{ w.wave_id }}_orders.csv">orders</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+{% if run.skipped %}
+<section class="card">
+  <h4><span class="pill warn">{{ run.skipped|length }} skipped</span> orders — missing pick location</h4>
+  <table class="tbl">
+    <tr><th>SO ref</th><th>Reason</th><th>Missing SKUs</th></tr>
+    {% for s in run.skipped %}
+    <tr><td>{{ s.so_ref }}</td><td>{{ s.reason }}</td><td>{{ s.missing_skus }}</td></tr>
+    {% endfor %}
+  </table>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="crumb">
+  <a href="/">← Console</a> / <a href="/runs/{{ wave.run_id }}">Run {{ wave.run_id }}</a>
+  / {{ wave.wave_id }}
+</div>
+<div class="mb">
+  <a class="btn sec" href="/runs/{{ wave.run_id }}/files/{{ wave.wave_id }}/{{ wave.wave_id }}_picksheet.pdf">⬇ PDF pick sheet</a>
+  <a class="btn sec" href="/runs/{{ wave.run_id }}/files/{{ wave.wave_id }}/{{ wave.wave_id }}_picks.csv">⬇ picks.csv</a>
+  <a class="btn sec" href="/runs/{{ wave.run_id }}/files/{{ wave.wave_id }}/{{ wave.wave_id }}_orders.csv">⬇ orders.csv</a>
+</div>
+<section class="card">
+  <table class="tbl">
+    <tr><th>Walk #</th><th>Location</th><th>SKU</th><th>Product</th><th>Qty</th>
+        <th>Run tot</th><th>Contributing SOs</th></tr>
+    {% for p in wave.pick_lines %}
+    <tr>
+      <td>{{ p.walk_index }}</td><td>{{ p.location }}</td><td>{{ p.product_code }}</td>
+      <td>{{ p.product_name }}</td><td>{{ p.qty_cartons }}</td>
+      <td>{{ p.cartons_running_total }}</td><td>{{ p.contributing_so_refs }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+{% endblock %}

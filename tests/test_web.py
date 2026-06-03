@@ -161,3 +161,37 @@ def test_stream_emits_events(tmp_path):
         body = "".join(chunk for chunk in s.iter_text())
     assert "pulling orders" in body
     assert "event: done" in body
+
+
+def test_run_detail_page(tmp_path, client):
+    base = tmp_path / "data" / "processed" / "waves"
+    _make_run(base, "20260604_081200")
+    r = client.get("/runs/20260604_081200")
+    assert r.status_code == 200
+    assert "VIC-bench-01" in r.text
+    assert "bench" in r.text                 # stream pill
+    assert "SO-9" in r.text                   # skipped order
+
+
+def test_wave_detail_page(tmp_path, client):
+    base = tmp_path / "data" / "processed" / "waves"
+    _make_run(base, "20260604_081200")
+    r = client.get("/runs/20260604_081200/waves/VIC-bench-01")
+    assert r.status_code == 200
+    assert "A-01-1-1" in r.text               # pick line location
+    assert "FRG-0042" in r.text
+
+
+def test_download_picks_csv(tmp_path, client):
+    base = tmp_path / "data" / "processed" / "waves"
+    _make_run(base, "20260604_081200")
+    r = client.get("/runs/20260604_081200/files/VIC-bench-01/VIC-bench-01_picks.csv")
+    assert r.status_code == 200
+    assert "A-01-1-1" in r.text
+
+
+def test_download_traversal_404(tmp_path, client):
+    base = tmp_path / "data" / "processed" / "waves"
+    _make_run(base, "20260604_081200")
+    r = client.get("/runs/20260604_081200/files/VIC-bench-01/..%2f..%2fmanifest.json")
+    assert r.status_code == 404

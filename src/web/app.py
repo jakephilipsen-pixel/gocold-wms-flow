@@ -8,8 +8,8 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -85,6 +85,29 @@ def create_app(repo_root: Path | None = None) -> FastAPI:
                     break
                 time.sleep(0.1)
         return StreamingResponse(gen(), media_type="text/event-stream")
+
+    @app.get("/runs/{run_id}", response_class=HTMLResponse)
+    def run_detail(request: Request, run_id: str):
+        try:
+            run = runs_mod.get_run(waves_base, run_id)
+        except (FileNotFoundError, OSError):
+            raise HTTPException(status_code=404, detail="run not found")
+        return templates.TemplateResponse(
+            request, "run_detail.html", {"run": run})
+
+    @app.get("/runs/{run_id}/waves/{wave_id}", response_class=HTMLResponse)
+    def wave_detail(request: Request, run_id: str, wave_id: str):
+        wave = runs_mod.get_wave(waves_base, run_id, wave_id)
+        return templates.TemplateResponse(
+            request, "wave_detail.html", {"wave": wave})
+
+    @app.get("/runs/{run_id}/files/{wave_id}/{name}")
+    def download(run_id: str, wave_id: str, name: str):
+        try:
+            path = runs_mod.file_path(waves_base, run_id, wave_id, name)
+        except (ValueError, FileNotFoundError):
+            raise HTTPException(status_code=404, detail="file not found")
+        return FileResponse(path, filename=name)
 
     return app
 
