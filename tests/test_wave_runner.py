@@ -164,3 +164,31 @@ def test_run_with_no_orders_is_empty(tmp_path, fake_cc):
     assert result.status == "empty"
     assert (result.out_dir / "index.md").exists()
     assert (result.out_dir / "manifest.json").exists()
+
+
+def test_cli_main_builds_settings_and_runs(tmp_path, monkeypatch):
+    """The CLI wrapper delegates to run_wave_generation with parsed flags."""
+    import importlib.util
+    import sys
+
+    spec = importlib.util.spec_from_file_location(
+        "_gen_waves", _ROOT / "scripts" / "generate_waves.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    captured = {}
+
+    def fake_run(settings, progress):
+        captured["settings"] = settings
+        progress(ProgressEvent("done", "ok", "ok"))
+        return RunResult("stamp", tmp_path, {"n_waves": 0}, "empty")
+
+    monkeypatch.setattr(mod, "run_wave_generation", fake_run)
+    monkeypatch.setattr(
+        sys, "argv",
+        ["generate_waves.py", "--early-release-cartons", "25",
+         "--pallet-fraction-threshold", "0.65"])
+    rc = mod.main()
+    assert rc == 0
+    assert captured["settings"].early_release_cartons == 25
+    assert captured["settings"].pallet_fraction_threshold == 0.65
