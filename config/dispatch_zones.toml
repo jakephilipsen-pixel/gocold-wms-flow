@@ -1,0 +1,33 @@
+# Dispatch zone fallback — used ONLY for delivery addresses with no run
+# history. Operator-editable. First matching zone wins (order matters).
+# postcodes: list of exact strings ("3210") or inclusive ranges ("3000-3207").
+# A zone with no postcodes matches on state alone.
+
+fallback = "Unzoned"
+
+[[zone]]
+name = "Metro Melbourne"
+state = "VIC"
+postcodes = ["3000-3207"]
+
+[[zone]]
+name = "Geelong"
+state = "VIC"
+postcodes = ["3211-3242"]
+
+[[zone]]
+name = "Regional VIC"
+state = "VIC"
+postcodes = ["3210", "3243-3999"]
+
+[[zone]]
+name = "Interstate NSW"
+state = "NSW"
+
+[[zone]]
+name = "Interstate QLD"
+state = "QLD"
+
+[[zone]]
+name = "Interstate SA"
+state = "SA"
