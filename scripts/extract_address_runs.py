@@ -48,9 +48,11 @@ from typing import Any
 
 # allow `python scripts/extract_address_runs.py` from repo root
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "src"))
 
-from src.cc_client.client import CartonCloudClient  # noqa: E402
+from cc_client import CartonCloudClient, search_consignments  # noqa: E402
+from dispatch.addresses import normalise_address  # noqa: E402
+from dispatch.consignments import extract_run_info  # noqa: E402
 
 log = logging.getLogger("extract_address_runs")
 
@@ -66,87 +68,6 @@ def _load_env() -> None:
             continue
         key, _, val = line.partition("=")
         os.environ.setdefault(key.strip(), val.strip().strip('"').strip("'"))
-
-
-def build_condition(days: int) -> dict[str, Any]:
-    """Build search condition: run sheet date in the last `days` days.
-
-    runSheetDate is a value-field search on consignments. We use
-    GREATER_THAN_OR_EQUAL_TO against today minus N days. CC accepts
-    ISO date strings (YYYY-MM-DD) for runSheetDate.
-    """
-    cutoff = (date.today() - timedelta(days=days)).isoformat()
-    return {
-        "condition": {
-            "type": "AndCondition",
-            "conditions": [
-                {
-                    "type": "TextComparisonCondition",
-                    "field": {"type": "ValueField", "value": "runSheetDate"},
-                    "value": {"type": "ValueField", "value": cutoff},
-                    "method": "GREATER_THAN_OR_EQUAL_TO",
-                }
-            ],
-        }
-    }
-
-
-def normalise_address(addr: dict[str, Any] | None) -> tuple[str, str, str, str, str, str]:
-    """Return (key, full, street, suburb, state, postcode).
-
-    The key is a lowercased, whitespace-collapsed concatenation of
-    street + suburb + state + postcode. Two addresses with the same key
-    are treated as the same delivery point even if minor formatting
-    differs in CC (e.g. trailing spaces, case).
-    """
-    if not addr:
-        return ("", "", "", "", "", "")
-
-    # CC Address shape per docs: lines, suburb, state, postcode, country.
-    # 'lines' is typically an array; defensively handle string too.
-    lines = addr.get("lines") or addr.get("addressLines") or []
-    if isinstance(lines, str):
-        street = lines.strip()
-    elif isinstance(lines, list):
-        street = ", ".join(str(x).strip() for x in lines if x)
-    else:
-        street = ""
-
-    # state can be {"code": "VIC", "name": "Victoria"} or a string
-    state_raw = addr.get("state") or {}
-    if isinstance(state_raw, dict):
-        state = state_raw.get("code") or state_raw.get("name") or ""
-    else:
-        state = str(state_raw)
-
-    suburb = addr.get("suburb") or addr.get("city") or ""
-    postcode = addr.get("postcode") or addr.get("postCode") or ""
-
-    full_parts = [p for p in [street, suburb, state, postcode] if p]
-    full = ", ".join(full_parts)
-
-    key = " ".join(
-        " ".join(str(x).lower().split()) for x in [street, suburb, state, postcode] if x
-    )
-
-    return (key, full, street, suburb, state, postcode)
-
-
-def extract_run_info(cons: dict[str, Any]) -> tuple[str, str, str, str]:
-    """Return (run_sheet_label, run_sheet_date, delivery_run_name, customer_name)."""
-    details = cons.get("details") or {}
-
-    runsheet = details.get("runsheet") or details.get("runSheet") or {}
-    rs_name = runsheet.get("name") or ""
-    rs_date = runsheet.get("date") or ""
-    rs_label = f"{rs_name} ({rs_date})" if rs_name and rs_date else (rs_name or rs_date)
-
-    dr = details.get("deliveryRun") or {}
-    dr_name = dr.get("name") or ""
-
-    cust = (cons.get("customer") or {}).get("name") or ""
-
-    return (rs_label, rs_date, dr_name, cust)
 
 
 def main() -> int:
@@ -172,8 +93,7 @@ def main() -> int:
     client = CartonCloudClient.from_env()  # write_enabled=False by default
     log.info("CartonCloud client ready. Searching last %d days of consignments.", args.days)
 
-    condition = build_condition(args.days)
-    log.debug("Search condition: %s", condition)
+    cutoff = (date.today() - timedelta(days=args.days)).isoformat()
 
     # aggregator keyed by normalised address
     agg: dict[str, dict[str, Any]] = defaultdict(
@@ -192,7 +112,7 @@ def main() -> int:
     )
 
     total = 0
-    for cons in client.search_consignments(condition["condition"]):
+    for cons in search_consignments(client, run_sheet_date_from=cutoff):
         total += 1
         details = cons.get("details") or {}
         deliver = details.get("deliver") or {}
