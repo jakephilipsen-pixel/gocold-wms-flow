@@ -67,6 +67,11 @@ until the slotting logic has been validated against reality for a quarter.
   to Parquet with date windows.
 - `scripts/analyze.py`: orchestrates analysis, writes CSVs, plots, the
   Go Cold themed `capture_template.xlsx`, and a readable `summary.md`.
+- `src/dispatch/`: read-only delivery-run prediction — learns habitual
+  address→run pairings from CC consignment history, predicts today's open
+  orders onto runs (confidence + reason), splits carriers, writes review
+  files. Orchestrator: `scripts/build_dispatch.py`. CC stays read-only;
+  `CartonCloudSink` write-back is built but refuses to act (v1).
 
 ## Validated against real data (10 May 2026)
 
@@ -152,6 +157,8 @@ until the slotting logic has been validated against reality for a quarter.
       (1500/1100/750mm) given (cube × velocity × replen frequency)
     - Replen rule generator: set qty trigger vs max-fill trigger per SKU
     - True bench-bypass threshold based on pallet fit, not just qty
+- Dispatch v1 (predict-to-run) built; v2 = stop sequencing; write-back
+  pending SAP B1 boundary.
 - Run sequencing needs a separate convo about how runs are currently
   defined and what road clusters make sense for these postcodes.
 
