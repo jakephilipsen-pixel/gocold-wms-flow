@@ -72,6 +72,13 @@ until the slotting logic has been validated against reality for a quarter.
   orders onto runs (confidence + reason), splits carriers, writes review
   files. Orchestrator: `scripts/build_dispatch.py`. CC stays read-only;
   `CartonCloudSink` write-back is built but refuses to act (v1).
+- `src/web_dispatch/`: dispatcher-facing run console (FastAPI + HTMX + SSE,
+  the delivery-side twin of the wave-pick console). Triggers
+  `build_dispatch` with live progress, browses predicted runs + the review
+  queue, downloads per-run manifests. Launcher `scripts/serve_web_dispatch.py`
+  (127.0.0.1:8078); published at runs.rolodex-ai.com via the `wms-runs`
+  Cloudflare tunnel. Read-only against CC. The build core is
+  `src/dispatch/runner.py`, shared with the CLI.
 
 ## Validated against real data (10 May 2026)
 
