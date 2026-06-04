@@ -1,20 +1,13 @@
-"""Integration: orchestrator produces a plan from fixture pulls (offline)."""
+"""Integration: run_dispatch builds a plan from fixture pulls (offline)."""
 from __future__ import annotations
 
-import importlib.util
 from datetime import date
 from pathlib import Path
 
+from dispatch import runner as mod
+from dispatch.runner import run_dispatch
+
 ROOT = Path(__file__).resolve().parent.parent
-
-
-def _load_orchestrator():
-    p = ROOT / "scripts" / "build_dispatch.py"
-    spec = importlib.util.spec_from_file_location("_build_dispatch", p)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
 
 _CONSIGNMENTS = [
     {"details": {"deliver": {"address": {"lines": ["1 A St"],
@@ -30,16 +23,13 @@ _OPEN_ORDERS = [
 ]
 
 
-def test_run_dispatch_builds_plan(monkeypatch, tmp_path):
-    mod = _load_orchestrator()
+def test_run_dispatch_builds_plan(monkeypatch):
     monkeypatch.setattr(mod, "search_consignments",
                         lambda *a, **k: iter(_CONSIGNMENTS))
     monkeypatch.setattr(mod, "search_outbound_orders",
                         lambda *a, **k: iter(_OPEN_ORDERS))
-    monkeypatch.setattr(mod, "CartonCloudClient",
-                        type("C", (), {"from_env": staticmethod(lambda: object())}))
 
-    plan = mod.run_dispatch(
+    plan = run_dispatch(
         client=object(),
         zones_path=ROOT / "config" / "dispatch_zones.toml",
         history_days=90, as_of=date(2026, 6, 5))
