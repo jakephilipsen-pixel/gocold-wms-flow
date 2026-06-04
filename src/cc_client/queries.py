@@ -427,3 +427,42 @@ def search_warehouse_locations(
         page_size=page_size,
         max_pages=max_pages,
     )
+
+
+def search_consignments(
+    client: CartonCloudClient,
+    *,
+    run_sheet_date_from: date | datetime | str,
+    page_size: int = 100,
+    max_pages: int | None = None,
+) -> Iterator[dict[str, Any]]:
+    """Iterate consignments whose run sheet is dated on/after a cutoff.
+
+    Consignments are CC's source of truth for "what address went on what
+    run": each carries the delivery address plus ``details.runsheet`` and
+    ``details.deliveryRun``. ``runSheetDate`` is a ValueField search taking
+    an ISO date (YYYY-MM-DD). Read-only despite the POST verb, like the
+    other search helpers.
+    """
+    body = {
+        "condition": {
+            "type": "AndCondition",
+            "conditions": [
+                {
+                    "type": "TextComparisonCondition",
+                    "field": {"type": "ValueField", "value": "runSheetDate"},
+                    "value": {
+                        "type": "ValueField",
+                        "value": _iso(run_sheet_date_from)[:10],
+                    },
+                    "method": "GREATER_THAN_OR_EQUAL_TO",
+                }
+            ],
+        }
+    }
+    yield from client.post_search(
+        "/consignments/search",
+        body,
+        page_size=page_size,
+        max_pages=max_pages,
+    )

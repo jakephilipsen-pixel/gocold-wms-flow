@@ -13,6 +13,7 @@ from .client import (
 from .queries import (
     get_sku_locations,
     get_stock_on_hand,
+    search_consignments,
     search_inbound_orders,
     search_outbound_orders,
     search_warehouse_locations,
@@ -26,6 +27,7 @@ __all__ = [
     "CartonCloudRateLimited",
     "get_sku_locations",
     "get_stock_on_hand",
+    "search_consignments",
     "search_inbound_orders",
     "search_outbound_orders",
     "search_warehouse_locations",
