@@ -145,3 +145,53 @@ def test_stream_emits_events_with_plan_link(tmp_path):
     assert "learning" in body
     assert "event: done" in body
     assert "/plans/S1" in body
+
+
+def test_plan_detail_shows_runs_and_review(tmp_path):
+    _, client = _client(tmp_path)
+    base = tmp_path / "data" / "processed" / "dispatch"
+    _make_plan(base, "20260605_093000")
+    r = client.get("/plans/20260605_093000")
+    assert r.status_code == 200
+    assert "West-Tue" in r.text          # predicted run
+    assert "new_address" in r.text       # review flag
+    assert "Geelong" in r.text           # review reason/zone
+
+
+def test_plan_detail_missing_404(tmp_path):
+    _, client = _client(tmp_path)
+    r = client.get("/plans/nope")
+    assert r.status_code == 404
+
+
+def test_run_detail_lists_stops(tmp_path):
+    _, client = _client(tmp_path)
+    base = tmp_path / "data" / "processed" / "dispatch"
+    _make_plan(base, "20260605_093000")
+    r = client.get("/plans/20260605_093000/runs/West-Tue")
+    assert r.status_code == 200
+    assert "1 A St" in r.text
+    assert "Scoresby" in r.text
+
+
+def test_run_detail_missing_plan_404(tmp_path):
+    _, client = _client(tmp_path)
+    r = client.get("/plans/nope/runs/West-Tue")
+    assert r.status_code == 404
+
+
+def test_download_suggested_csv(tmp_path):
+    _, client = _client(tmp_path)
+    base = tmp_path / "data" / "processed" / "dispatch"
+    _make_plan(base, "20260605_093000")
+    r = client.get("/plans/20260605_093000/files/suggested_runs.csv")
+    assert r.status_code == 200
+    assert "West-Tue" in r.text
+
+
+def test_download_traversal_404(tmp_path):
+    _, client = _client(tmp_path)
+    base = tmp_path / "data" / "processed" / "dispatch"
+    _make_plan(base, "20260605_093000")
+    r = client.get("/plans/20260605_093000/files/..%2f..%2fsecret")
+    assert r.status_code == 404

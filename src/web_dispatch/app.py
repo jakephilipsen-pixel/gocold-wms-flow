@@ -84,6 +84,31 @@ def create_app(repo_root: Path | None = None) -> FastAPI:
                 time.sleep(0.1)
         return StreamingResponse(gen(), media_type="text/event-stream")
 
+    @app.get("/plans/{stamp}", response_class=HTMLResponse)
+    def plan_detail(request: Request, stamp: str):
+        try:
+            plan = plans_mod.get_plan(dispatch_base, stamp)
+        except (FileNotFoundError, OSError):
+            raise HTTPException(status_code=404, detail="plan not found")
+        return templates.TemplateResponse(
+            request, "plan_detail.html", {"plan": plan})
+
+    @app.get("/plans/{stamp}/runs/{run}", response_class=HTMLResponse)
+    def run_detail(request: Request, stamp: str, run: str):
+        if not (dispatch_base / stamp / "suggested_runs.csv").exists():
+            raise HTTPException(status_code=404, detail="plan not found")
+        data = plans_mod.get_run(dispatch_base, stamp, run)
+        return templates.TemplateResponse(
+            request, "run_detail.html", {"run": data})
+
+    @app.get("/plans/{stamp}/files/{name}")
+    def download(stamp: str, name: str):
+        try:
+            path = plans_mod.file_path(dispatch_base, stamp, name)
+        except (ValueError, FileNotFoundError):
+            raise HTTPException(status_code=404, detail="file not found")
+        return FileResponse(path, filename=name)
+
     return app
 
 
