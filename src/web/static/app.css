@@ -14,6 +14,9 @@ body{margin:0;font-family:ui-sans-serif,system-ui,sans-serif;background:var(--bg
 .mb{margin-bottom:16px}
 label{display:block;font-size:13px;color:var(--muted);margin-bottom:12px}
 .in{display:block;width:100%;margin-top:4px;border:1px solid #cdd7df;border-radius:5px;padding:9px 11px;font-size:16px;background:#f8fafb}
+.check{display:flex;align-items:flex-start;gap:8px;font-size:14px;color:var(--ink,#1c2b36)}
+.check input{margin-top:3px;width:18px;height:18px;flex:0 0 auto}
+.check small{display:block;width:100%;font-size:12px;color:var(--muted);margin-top:2px}
 .btn{background:var(--green);color:#fff;border:0;border-radius:6px;padding:12px 16px;font-weight:700;font-size:16px;width:100%;cursor:pointer;box-shadow:0 1px 0 #1c9c62}
 .btn.sec{background:#eaf4ff;color:var(--blue);box-shadow:none;border:1px solid #cfe2f7;width:auto;margin-right:8px}
 .tbl{width:100%;border-collapse:collapse;font-size:15px}

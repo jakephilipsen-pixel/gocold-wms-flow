@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -119,6 +120,47 @@ def test_post_runs_starts_job_and_returns_progress_panel(tmp_path, monkeypatch):
     assert r.status_code == 200
     assert "sse" in r.text.lower()           # the panel wires up an SSE source
     assert "/stream" in r.text
+
+
+def test_index_renders_soh_fallback_toggle(client):
+    r = client.get("/")
+    assert 'name="soh_fallback"' in r.text
+
+
+def test_post_runs_passes_soh_fallback(tmp_path):
+    from fastapi.testclient import TestClient
+    import web.app as appmod
+    from wave_runner import RunResult
+
+    captured: dict = {}
+
+    def fake_run(settings, progress):
+        captured["soh_fallback"] = settings.soh_fallback
+        return RunResult("r", tmp_path, {"n_waves": 0}, "empty")
+
+    app = appmod.create_app(repo_root=tmp_path)
+    app.state.manager._runner = fake_run
+    client = TestClient(app)
+    base = {"status": "X", "customer_name": "", "pallet_fraction_threshold": "0.7",
+            "early_release_cartons": "30", "run_group_col": "delivery_state"}
+
+    def _wait(job_id):
+        for _ in range(200):
+            if app.state.manager.get(job_id).done:
+                return
+            time.sleep(0.01)
+        raise AssertionError("job did not finish")
+
+    # Ticked → True
+    jid = client.post("/runs", data={**base, "soh_fallback": "true"}).headers["x-job-id"]
+    _wait(jid)
+    assert captured["soh_fallback"] is True
+
+    # Absent (unchecked checkbox sends nothing) → default False
+    captured.clear()
+    jid = client.post("/runs", data=base).headers["x-job-id"]
+    _wait(jid)
+    assert captured["soh_fallback"] is False
 
 
 def test_post_runs_rejects_when_active(tmp_path):

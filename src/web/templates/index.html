@@ -23,6 +23,12 @@
           <option value="delivery_postcode">delivery_postcode</option>
         </select>
       </label>
+      <label class="check">
+        <input type="checkbox" name="soh_fallback" value="true" checked>
+        Resolve pick locations from live CC stock-on-hand
+        <small>Needed until an approved assignments file exists. Adds a
+        Stock-on-Hand report run (~10–60s) to each generation.</small>
+      </label>
       <button class="btn" type="submit">⚡ Generate waves</button>
     </form>
   </section>

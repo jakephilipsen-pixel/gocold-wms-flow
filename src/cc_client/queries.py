@@ -311,15 +311,19 @@ def get_sku_locations(
     support per-SKU filtering at the report level, so we filter
     client-side after fetching.
 
-    Aggregates by warehouseLocation + product so we get one row per
-    location/product pair. Costs one SOH report run; uses the existing
-    ``get_stock_on_hand`` plumbing (which polls until the report is
-    SUCCESS) so it inherits its rate-limit and retry behaviour.
+    Aggregates by ``location`` + ``productType`` so we get one row per
+    location/product pair. (CC rejects ``warehouseLocation``/``product`` as
+    aggregate dimensions with HTTP 422 — the accepted set is productStatus,
+    productGroup, productType, unitOfMeasure, inboundOrder, batch,
+    receivedWeek, sscc, sapLineNo, expiryDate, location.) Costs one SOH
+    report run; uses the existing ``get_stock_on_hand`` plumbing (which polls
+    until the report is SUCCESS) so it inherits its rate-limit and retry
+    behaviour.
     """
     items = get_stock_on_hand(
         client,
         customer_id=customer_id,
-        aggregate_by=["warehouseLocation", "product", "unitOfMeasure"],
+        aggregate_by=["location", "productType", "unitOfMeasure"],
         poll_interval=poll_interval,
         max_wait=max_wait,
     )
@@ -327,8 +331,11 @@ def get_sku_locations(
     wanted = set(product_codes) if product_codes else None
     out: list[dict[str, Any]] = []
     for item in items:
-        # SOH item shapes vary across CC versions; pull defensively.
-        product = item.get("product") or item.get("details", {}).get("product") or {}
+        # SOH item shapes vary across CC versions; pull defensively. The
+        # aggregated shape nests the SKU under details.product and the
+        # location/uom under properties.* (verified live 2026-06-05).
+        props = item.get("properties") or {}
+        product = item.get("details", {}).get("product") or item.get("product") or {}
         product_code = (product.get("references") or {}).get("code") or product.get(
             "code"
         )
@@ -338,17 +345,27 @@ def get_sku_locations(
             continue
 
         location = (
-            item.get("warehouseLocation")
+            props.get("location")
+            or item.get("warehouseLocation")
             or item.get("location")
             or item.get("details", {}).get("warehouseLocation")
             or {}
         )
-        location_name = location.get("name") or location.get("code")
+        location_name = (
+            location.get("name")
+            or (location.get("references") or {}).get("barcode")
+            or location.get("code")
+        )
         location_id = location.get("id")
         if not location_name and not location_id:
             continue
 
-        uom = item.get("unitOfMeasure") or {}
+        uom = (
+            props.get("unitOfMeasure")
+            or item.get("unitOfMeasure")
+            or item.get("details", {}).get("unitOfMeasure")
+            or {}
+        )
         measures = item.get("measures") or item.get("quantity") or {}
         qty = (
             measures.get("quantity")

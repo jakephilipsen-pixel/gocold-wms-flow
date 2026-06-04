@@ -48,13 +48,15 @@ def create_app(repo_root: Path | None = None) -> FastAPI:
         pallet_fraction_threshold: float = Form(0.70),
         early_release_cartons: int = Form(30),
         run_group_col: str = Form("delivery_state"),
+        soh_fallback: bool = Form(False),
     ):
         settings = WaveRunSettings(
             repo_root=repo_root, status=status,
             customer_name=customer_name or None,
             pallet_fraction_threshold=pallet_fraction_threshold,
             early_release_cartons=early_release_cartons,
-            run_group_col=run_group_col)
+            run_group_col=run_group_col,
+            soh_fallback=soh_fallback)
         try:
             job_id = manager.start(settings)
         except JobManager.RunInProgressError:

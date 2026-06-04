@@ -97,6 +97,36 @@ until the slotting logic has been validated against reality for a quarter.
    capped that hard but be polite.
 6. **API version**: `Accept-Version: 1` for almost everything; warehouse
    products supports `Accept-Version: 8` for the latest schema.
+7. **`/warehouse-locations/search` returns 404** (not 403) on this tenant —
+   the path is not exposed on the public v1 API. This is NOT a missing read
+   scope. Location data therefore comes from (a) CC's UI XLS export
+   (`data/locations/`, loaded by `src/locations/cc_loader.py`) and (b) the
+   SOH report-run aggregated by `location` (`get_sku_locations`).
+   So a "no stock locations" symptom in wave generation is a data/source
+   issue, not a credential-scope one — don't re-chase the scope theory.
+8. **SOH `aggregateBy` only accepts a fixed set of dimensions** (422 on
+   anything else): productStatus, productGroup, productType, unitOfMeasure,
+   inboundOrder, batch, receivedWeek, sscc, sapLineNo, expiryDate,
+   **location**. Use `location` (NOT `warehouseLocation`) and `productType`
+   (NOT `product`). In the aggregated SOH item, the SKU is under
+   `details.product.references.code` and the location under
+   `properties.location` — see `get_sku_locations` and `test_sku_locations`.
+
+## Credentials & scopes
+
+- **Only `./.env` holds live CC creds** (`CC_CLIENT_ID` / `CC_CLIENT_SECRET`
+  / `CC_TENANT_ID`), OAuth2 client_credentials. The `dim-capture-app/*`
+  envs are a different, not-yet-live auth model (Bearer `CC_API_KEY`) and
+  currently hold placeholders only.
+- **Granted scopes in use (all reads):** orders + SOH/inventory via the
+  *WMS Create Job* role (`/outbound-orders`, `/inbound-orders`,
+  `/report-runs`); carton dims via *WMS Add/Edit Product*
+  (`/warehouse-products`). CC's `/uaa/userinfo` does not enumerate
+  authorities — verify scope functionally (search + a SOH report-run).
+- **Rotation:** done via "reset secret" on the existing client (same
+  client ID, new secret — old secret dies server-side immediately, so any
+  other host holding it, e.g. the NUC, breaks until updated). Last rotated
+  5 Jun 2026, verified read-green (auth/orders/products/SOH).
 
 ## Safety rules — DO NOT VIOLATE
 
