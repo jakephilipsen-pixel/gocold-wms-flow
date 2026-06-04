@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid">
+  <section class="card">
+    <h4>New dispatch build</h4>
+    <form hx-post="/build" hx-target="#progress" hx-swap="innerHTML">
+      <label>History window (days)
+        <input class="in" name="history_days" type="number" value="90">
+      </label>
+      <label class="check">
+        <input type="checkbox" name="skip_learn" value="true">
+        Reuse cached history model
+        <small>Skips the consignment pull and reuses the last learned model.
+        Faster, but won't pick up runs added since the last build.</small>
+      </label>
+      <button class="btn" type="submit">⚡ Build predictions</button>
+    </form>
+  </section>
+  <div>
+    <section class="card mb">
+      <h4>Live progress</h4>
+      <div id="progress"><p class="muted">No build in progress.</p></div>
+    </section>
+    <section class="card">
+      <h4>Recent builds</h4>
+      <table class="tbl">
+        <tr><th>Plan</th><th>Runs</th><th>Assigned</th><th>Review</th>
+            <th>Carriers</th><th></th></tr>
+        {% for p in plans %}
+        <tr>
+          <td>{{ p.generated_at }}</td>
+          <td>{{ p.n_runs }}</td>
+          <td>{{ p.n_assignments }}</td>
+          <td>{% if p.n_review %}<span class="pill warn">{{ p.n_review }}</span>
+              {% else %}0{% endif %}</td>
+          <td>{{ p.n_carriers }}</td>
+          <td><a href="/plans/{{ p.stamp }}">View →</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="muted">No builds yet.</td></tr>
+        {% endfor %}
+      </table>
+    </section>
+  </div>
+</div>
+{% endblock %}
