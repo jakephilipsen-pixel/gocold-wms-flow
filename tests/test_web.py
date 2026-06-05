@@ -17,7 +17,7 @@ def _make_run(base: Path, run_id: str) -> Path:
         "settings": {"status": "AWAITING_PICK_AND_PACK", "customer_name": None,
                      "pallet_fraction_threshold": 0.65, "early_release_cartons": 25,
                      "run_group_col": "delivery_state", "lines_per_hour": 60,
-                     "soh_fallback": False},
+                     },
         "summary": {"n_waves": 1, "n_orders_total": 22, "n_orders_skipped": 1,
                     "n_pick_lines_total": 3},
         "waves": [{"wave_id": "VIC-bench-01", "stream": "3_wave_bench",
@@ -122,45 +122,11 @@ def test_post_runs_starts_job_and_returns_progress_panel(tmp_path, monkeypatch):
     assert "/stream" in r.text
 
 
-def test_index_renders_soh_fallback_toggle(client):
+def test_index_shows_soh_always_live(client):
     r = client.get("/")
-    assert 'name="soh_fallback"' in r.text
+    assert 'name="soh_fallback"' not in r.text
+    assert "no stale fallback" in r.text
 
-
-def test_post_runs_passes_soh_fallback(tmp_path):
-    from fastapi.testclient import TestClient
-    import web.app as appmod
-    from wave_runner import RunResult
-
-    captured: dict = {}
-
-    def fake_run(settings, progress):
-        captured["soh_fallback"] = settings.soh_fallback
-        return RunResult("r", tmp_path, {"n_waves": 0}, "empty")
-
-    app = appmod.create_app(repo_root=tmp_path)
-    app.state.manager._runner = fake_run
-    client = TestClient(app)
-    base = {"status": "X", "customer_name": "", "pallet_fraction_threshold": "0.7",
-            "early_release_cartons": "30", "run_group_col": "delivery_state"}
-
-    def _wait(job_id):
-        for _ in range(200):
-            if app.state.manager.get(job_id).done:
-                return
-            time.sleep(0.01)
-        raise AssertionError("job did not finish")
-
-    # Ticked → True
-    jid = client.post("/runs", data={**base, "soh_fallback": "true"}).headers["x-job-id"]
-    _wait(jid)
-    assert captured["soh_fallback"] is True
-
-    # Absent (unchecked checkbox sends nothing) → default False
-    captured.clear()
-    jid = client.post("/runs", data=base).headers["x-job-id"]
-    _wait(jid)
-    assert captured["soh_fallback"] is False
 
 
 def test_post_runs_rejects_when_active(tmp_path):
