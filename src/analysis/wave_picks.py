@@ -14,13 +14,14 @@ wave_id. Each sheet contains:
 Read-only. We never push anything back to CC; the operator manually
 creates the wave in CC using the order list we generate.
 
-Location resolution priority for each (so_id, product_code):
-    1. ``assignments`` (preferred) — the operator-approved pick face
-       from ``assign_skus_to_locations``.
-    2. ``sku_locations_fallback`` — a live SKU -> location map (e.g.
-       from CC stock-on-hand) for SKUs not in assignments yet.
-    3. If still no location, the whole order is added to
-       ``skipped_orders`` with the offending SKU(s) in the reason.
+Location resolution for each (so_id, product_code):
+    There is one source: ``sku_locations`` — a live SKU → location map
+    derived from the CartonCloud stock-on-hand report (one pick-face
+    location per SKU). A line whose SKU is absent from ``sku_locations``
+    still rides the wave, flagged ``unallocated`` (location shown as
+    ``UNALLOCATED``), and is sorted to the end of the walk for manual
+    locating by the operator. Only genuinely empty orders (no SO lines
+    present in the extract) are skipped to ``skipped_orders``.
 
 Streams 2 + 3 only. Stream 1 (pick-to-pallet) needs different paperwork
 (pallet labels, wrap instructions) and is out of scope.
@@ -89,6 +90,7 @@ def _empty_pick_lines() -> pd.DataFrame:
         "qty_cartons",
         "cartons_running_total",
         "contributing_so_refs",
+        "unallocated",
     ])
 
 
