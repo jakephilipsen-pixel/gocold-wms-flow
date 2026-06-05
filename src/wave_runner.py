@@ -290,10 +290,10 @@ def _build_index_md(
             "",
             f"## {len(skipped)} skipped order(s)",
             "",
-            "These orders were dropped from waves because we couldn't "
-            "resolve a pick location for one or more SKUs. Run "
-            "`scripts/assign.py` once dims are captured, or add the SKU "
-            "to CC stock-on-hand at the correct location.",
+            "These orders had no SO lines present in the extract and were "
+            "therefore skipped entirely. SKUs without a live stock location "
+            "are not skipped — they appear as `unallocated` pick lines on "
+            "the sheet for the operator to manually locate.",
             "",
             "| Wave | SO ref | Reason | Missing SKUs |",
             "|---|---|---|---|",

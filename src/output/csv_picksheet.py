@@ -49,8 +49,11 @@ def write_wave_csvs(sheet: WavePickSheet, out_dir: Path) -> WaveCsvPaths:
         "qty_cartons",
         "cartons_running_total",
         "contributing_so_refs",
+        "unallocated",
     ]
     picks_path = out_dir / f"{sheet.wave_id}_picks.csv"
+    # reindex fills any absent column (e.g. unallocated) with NaN rather
+    # than raising KeyError — safe for frames built before the flag existed.
     picks_view = sheet.pick_lines.reindex(columns=picks_cols)
     picks_view.to_csv(picks_path, index=False)
 

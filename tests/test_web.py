@@ -19,7 +19,8 @@ def _make_run(base: Path, run_id: str) -> Path:
                      "run_group_col": "delivery_state", "lines_per_hour": 60,
                      },
         "summary": {"n_waves": 1, "n_orders_total": 22, "n_orders_skipped": 1,
-                    "n_pick_lines_total": 3},
+                    "n_pick_lines_total": 3, "n_lines_unallocated": 2,
+                    "n_skus_unallocated": 1},
         "waves": [{"wave_id": "VIC-bench-01", "stream": "3_wave_bench",
                    "run_group": "VIC", "receive_date": None, "total_cartons": 45,
                    "total_lines": 3, "n_orders": 22, "estimated_walk_m": 240.0}],
@@ -48,6 +49,9 @@ def test_list_runs_newest_first(tmp_path):
     runs = list_runs(tmp_path)
     assert [r["run_id"] for r in runs] == ["20260604_081200", "20260603_080000"]
     assert runs[0]["n_waves"] == 1
+    # Fix 2: unallocated counts surfaced in list_runs
+    assert runs[0]["n_lines_unallocated"] == 2
+    assert runs[0]["n_skus_unallocated"] == 1
 
 
 def test_get_run_includes_waves_and_skipped(tmp_path):
@@ -179,6 +183,7 @@ def test_run_detail_page(tmp_path, client):
     assert "VIC-bench-01" in r.text
     assert "bench" in r.text                 # stream pill
     assert "SO-9" in r.text                   # skipped order
+    assert "Unallocated lines" in r.text      # Fix 2: unallocated stat tile
 
 
 def test_wave_detail_page(tmp_path, client):
