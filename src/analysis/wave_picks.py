@@ -107,59 +107,23 @@ def _empty_orders() -> pd.DataFrame:
 
 
 def _build_sku_location_lookup(
-    assignments: pd.DataFrame | None,
-    sku_locations_fallback: pd.DataFrame | None,
+    sku_locations: pd.DataFrame | None,
 ) -> pd.DataFrame:
-    """Merge primary + fallback into one product_code -> location frame.
-
-    Columns returned: product_code, location, aisle, bay, level, sublevel,
-    source (assignment / fallback). Assignments win when both present.
-    """
-    cols = [
-        "product_code",
-        "location",
-        "aisle",
-        "bay",
-        "level",
-        "sublevel",
-        "source",
-    ]
-    frames: list[pd.DataFrame] = []
-
-    if assignments is not None and not assignments.empty:
-        a = assignments.copy()
-        rename = {}
-        if "assigned_location" in a.columns and "location" not in a.columns:
-            rename["assigned_location"] = "location"
-        if rename:
-            a = a.rename(columns=rename)
-        for c in ("aisle", "bay", "level", "sublevel"):
-            if c not in a.columns:
-                a[c] = pd.NA
-        a["source"] = "assignment"
-        frames.append(a[cols])
-
-    if sku_locations_fallback is not None and not sku_locations_fallback.empty:
-        f = sku_locations_fallback.copy()
-        for c in ("aisle", "bay", "level", "sublevel"):
-            if c not in f.columns:
-                f[c] = pd.NA
-        if "location" not in f.columns:
-            raise ValueError(
-                "sku_locations_fallback must include a 'location' column"
-            )
-        f["source"] = "fallback"
-        frames.append(f[cols])
-
-    if not frames:
+    """Normalise the live SKU -> location frame to the columns the
+    generator needs: product_code, location, aisle, bay, level, sublevel."""
+    cols = ["product_code", "location", "aisle", "bay", "level", "sublevel"]
+    if sku_locations is None or sku_locations.empty:
         return pd.DataFrame(columns=cols)
-
-    merged = pd.concat(frames, ignore_index=True)
-    # Assignments win — drop_duplicates keeps the first occurrence.
-    merged = merged.drop_duplicates("product_code", keep="first").reset_index(
-        drop=True
-    )
-    return merged
+    s = sku_locations.copy()
+    if "assigned_location" in s.columns and "location" not in s.columns:
+        s = s.rename(columns={"assigned_location": "location"})
+    if "location" not in s.columns:
+        raise ValueError("sku_locations must include a 'location' column")
+    for c in ("aisle", "bay", "level", "sublevel"):
+        if c not in s.columns:
+            s[c] = pd.NA
+    return s.drop_duplicates("product_code", keep="first").reset_index(
+        drop=True)[cols]
 
 
 def _walk_sort_key(
@@ -172,6 +136,11 @@ def _walk_sort_key(
     aisle ordering (and unlisted aisles sort to the end alphabetically).
     """
     df = df.copy()
+
+    if "unallocated" in df.columns:
+        df["_unalloc_rank"] = df["unallocated"].fillna(False).astype(int)
+    else:
+        df["_unalloc_rank"] = 0
 
     if aisle_walk_order:
         # Anchor known aisles to explicit indices; unknown ones land after.
@@ -196,11 +165,13 @@ def _walk_sort_key(
     ).fillna(9999)
 
     df = df.sort_values(
-        ["_aisle_rank", "_aisle_tie", "_bay_num", "_level_num", "_sublevel_num"],
+        ["_unalloc_rank", "_aisle_rank", "_aisle_tie",
+         "_bay_num", "_level_num", "_sublevel_num"],
         kind="mergesort",
     ).reset_index(drop=True)
     return df.drop(columns=[
-        "_aisle_rank", "_aisle_tie", "_bay_num", "_level_num", "_sublevel_num"
+        "_unalloc_rank", "_aisle_rank", "_aisle_tie",
+        "_bay_num", "_level_num", "_sublevel_num"
     ])
 
 
@@ -237,9 +208,7 @@ def _estimate_walk_distance(pick_lines: pd.DataFrame) -> float:
 def generate_wave_pick_sheets(
     classification: StreamClassification,
     so_lines: pd.DataFrame,
-    locations: pd.DataFrame,
-    assignments: pd.DataFrame | None = None,
-    sku_locations_fallback: pd.DataFrame | None = None,
+    sku_locations: pd.DataFrame | None = None,
     aisle_walk_order: list[str] | None = None,
     run_group_col: str = "delivery_state",
     early_release_cartons: int | None = None,
@@ -250,13 +219,15 @@ def generate_wave_pick_sheets(
       1. Reuse ``plan_waves`` to group streams 2/3 orders into waves.
       2. For each wave, pull the order detail (so_lines for those so_ids).
       3. Resolve a location for each (so_id, product_code) via
-         ``assignments`` then ``sku_locations_fallback``.
-      4. Consolidate same-SKU picks across orders within the wave (one
+         ``sku_locations`` (the sole live SOH-derived source).
+      4. Lines whose SKU has no live location ride the wave flagged
+         ``unallocated`` (sorted last); only genuinely empty orders are
+         skipped.
+      5. Consolidate same-SKU picks across orders within the wave (one
          row per unique location/SKU with summed qty and a list of
          contributing so_refs).
-      5. Sort by walk order and pre-number the picks.
-      6. Skip any order whose SKUs can't be located (whole order goes
-         to ``skipped_orders``).
+      6. Sort by walk order (unallocated lines last) and pre-number the
+         picks.
 
     Parameters
     ----------
@@ -265,15 +236,13 @@ def generate_wave_pick_sheets(
     so_lines :
         Raw SO lines (typically ``Snapshot.so_lines``). Provides the
         per-line SKU/qty detail that the order-level frame doesn't have.
-    locations :
-        Output of ``load_cc_locations`` (used for grammar / walk-order
-        sanity even when assignments already include aisle/bay).
-    assignments :
-        Output of ``assign_skus_to_locations``. Preferred SKU->location
-        source.
-    sku_locations_fallback :
-        Optional secondary lookup (e.g. SOH-derived). Used only for SKUs
-        not present in ``assignments``.
+    sku_locations :
+        Live SKU -> location frame derived from the SOH report (the sole
+        location source). Must include ``product_code`` and ``location``
+        columns. Optional split-location columns ``aisle``, ``bay``,
+        ``level``, ``sublevel`` are used for walk-order sorting when
+        present. SKUs absent from this frame ride the wave flagged
+        ``unallocated``.
     aisle_walk_order :
         Optional explicit aisle order. Default = alphabetical.
     run_group_col :
@@ -291,6 +260,8 @@ def generate_wave_pick_sheets(
             "n_orders_total": 0,
             "n_orders_skipped": 0,
             "n_pick_lines_total": 0,
+            "n_lines_unallocated": 0,
+            "n_skus_unallocated": 0,
         }
         return result
 
@@ -301,6 +272,8 @@ def generate_wave_pick_sheets(
             "n_orders_total": 0,
             "n_orders_skipped": 0,
             "n_pick_lines_total": 0,
+            "n_lines_unallocated": 0,
+            "n_skus_unallocated": 0,
         }
         return result
 
@@ -317,17 +290,19 @@ def generate_wave_pick_sheets(
             "n_orders_total": 0,
             "n_orders_skipped": 0,
             "n_pick_lines_total": 0,
+            "n_lines_unallocated": 0,
+            "n_skus_unallocated": 0,
         }
         return result
 
-    # Build the SKU -> location lookup once.
-    sku_lookup = _build_sku_location_lookup(
-        assignments, sku_locations_fallback
+    # Build the SKU -> location lookup once (live SOH only).
+    sku_lookup = _build_sku_location_lookup(sku_locations)
+    sku_lookup_idx = (
+        sku_lookup.set_index("product_code") if not sku_lookup.empty else None
     )
-    sku_lookup_idx = sku_lookup.set_index("product_code") if not sku_lookup.empty else None
     if sku_lookup.empty:
         log.warning(
-            "no assignments or fallback provided; every order will be skipped"
+            "no live SKU locations provided; every line will be unallocated"
         )
 
     # Per-order assignments: wave_id -> [so_id, ...]
@@ -383,7 +358,6 @@ def generate_wave_pick_sheets(
                 n_orders_skipped += 1
                 continue
 
-            missing: list[str] = []
             order_rows: list[dict] = []
             for line in lines.itertuples(index=False):
                 code = getattr(line, "product_code", None)
@@ -394,7 +368,17 @@ def generate_wave_pick_sheets(
                 if sku_lookup_idx is not None and code in sku_lookup_idx.index:
                     loc_row = sku_lookup_idx.loc[code]
                 if loc_row is None:
-                    missing.append(str(code))
+                    # No live location — line still rides the wave, flagged.
+                    order_rows.append({
+                        "so_id": sid,
+                        "product_code": code,
+                        "product_name": getattr(line, "product_name", ""),
+                        "quantity": qty,
+                        "location": "UNALLOCATED",
+                        "aisle": pd.NA, "bay": pd.NA,
+                        "level": pd.NA, "sublevel": pd.NA,
+                        "unallocated": True,
+                    })
                     continue
                 order_rows.append({
                     "so_id": sid,
@@ -406,21 +390,8 @@ def generate_wave_pick_sheets(
                     "bay": loc_row.get("bay"),
                     "level": loc_row.get("level"),
                     "sublevel": loc_row.get("sublevel"),
+                    "unallocated": False,
                 })
-
-            if missing:
-                so_ref = (
-                    per_order.loc[sid, "so_ref"] if sid in per_order.index else ""
-                )
-                skipped_rows.append({
-                    "wave_id": wave_id,
-                    "so_id": sid,
-                    "so_ref": so_ref,
-                    "reason": "missing pick location for SKU(s)",
-                    "missing_skus": ", ".join(sorted(set(missing))),
-                })
-                n_orders_skipped += 1
-                continue
 
             order_picks.extend(order_rows)
 
@@ -467,6 +438,7 @@ def generate_wave_pick_sheets(
             contributing_so_refs=("so_ref", lambda s: ", ".join(
                 sorted({x for x in s if x})
             )),
+            unallocated=("unallocated", "first"),
         ).reset_index()
 
         consolidated = _walk_sort_key(consolidated, aisle_walk_order)
@@ -488,6 +460,7 @@ def generate_wave_pick_sheets(
             "qty_cartons",
             "cartons_running_total",
             "contributing_so_refs",
+            "unallocated",
         ]
         consolidated = consolidated[ordered_cols]
 
@@ -512,6 +485,17 @@ def generate_wave_pick_sheets(
         ))
         total_pick_lines += total_lines
 
+    n_lines_unallocated = sum(
+        int(s.pick_lines["unallocated"].fillna(False).sum())
+        for s in sheets if "unallocated" in s.pick_lines.columns
+    )
+    n_skus_unallocated = len({
+        code
+        for s in sheets if "unallocated" in s.pick_lines.columns
+        for code in s.pick_lines.loc[
+            s.pick_lines["unallocated"].fillna(False), "product_code"]
+    })
+
     skipped_df = (
         pd.DataFrame(skipped_rows)
         if skipped_rows
@@ -528,6 +512,8 @@ def generate_wave_pick_sheets(
         "n_orders_skipped": n_orders_skipped,
         "n_pick_lines_total": total_pick_lines,
         "streams": sorted({s.stream for s in sheets}),
+        "n_lines_unallocated": n_lines_unallocated,
+        "n_skus_unallocated": n_skus_unallocated,
     }
 
     log.info(

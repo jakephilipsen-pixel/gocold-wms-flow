@@ -48,7 +48,7 @@ def _order_row(so_id, so_ref, cartons, lines):
     }
 
 
-def _assignments():
+def _sku_locations():
     return pd.DataFrame([
         {"product_code": "WIDGET", "location": "A-01-1",
          "aisle": "A", "bay": "01", "level": "1", "sublevel": "0"},
@@ -63,8 +63,7 @@ def _run(per_order, so_lines, **kw):
     return generate_wave_pick_sheets(
         classification=_classification(per_order),
         so_lines=so_lines,
-        locations=pd.DataFrame(),          # unused by the generator body
-        assignments=_assignments(),
+        sku_locations=_sku_locations(),
         early_release_cartons=10_000,      # keep all orders in one wave
         **kw,
     )
@@ -147,9 +146,9 @@ def test_walk_index_is_sequential_and_sorted():
     assert list(sheet.pick_lines["cartons_running_total"]) == [2, 3]
 
 
-def test_order_with_unlocatable_sku_is_skipped_whole():
-    """If any SKU in an order has no location, the WHOLE order is skipped
-    (we never ship a half-pickable sheet to the floor)."""
+def test_order_with_unlocatable_sku_is_flagged_not_skipped():
+    """A SKU with no live location does NOT skip the order — its line rides
+    the wave flagged 'unallocated'. The order's other lines pick normally."""
     per_order = pd.DataFrame([
         _order_row(1, "SO-A", cartons=2, lines=2),
         _order_row(2, "SO-B", cartons=1, lines=1),
@@ -162,16 +161,31 @@ def test_order_with_unlocatable_sku_is_skipped_whole():
 
     result = _run(per_order, so_lines)
 
-    # SO-A dropped entirely (UNKNOWN has no pick face); SO-B survives.
-    skipped = result.skipped_orders
-    assert set(skipped["so_ref"]) == {"SO-A"}
-    assert "UNKNOWN" in skipped.iloc[0]["missing_skus"]
+    # No order is skipped for a missing location.
+    assert result.skipped_orders.empty
+    assert result.summary["n_skus_unallocated"] == 1
+    assert result.summary["n_lines_unallocated"] == 1
 
     sheet = result.sheets[0]
-    # Only SO-B's WIDGET remains — SO-A contributed nothing.
     picks = sheet.pick_lines.set_index("product_code")
-    assert picks.loc["WIDGET", "qty_cartons"] == 1
-    assert picks.loc["WIDGET", "contributing_so_refs"] == "SO-B"
+    # WIDGET is located and summed across SO-A + SO-B.
+    assert picks.loc["WIDGET", "qty_cartons"] == 2
+    assert bool(picks.loc["WIDGET", "unallocated"]) is False
+    # UNKNOWN rides the wave, flagged, with no real location.
+    assert picks.loc["UNKNOWN", "location"] == "UNALLOCATED"
+    assert bool(picks.loc["UNKNOWN", "unallocated"]) is True
+
+
+def test_unallocated_lines_sort_to_the_end_of_the_walk():
+    per_order = pd.DataFrame([_order_row(1, "SO-A", cartons=3, lines=2)])
+    so_lines = pd.DataFrame([
+        {"so_id": 1, "product_code": "UNKNOWN", "product_name": "Mystery", "quantity": 1},
+        {"so_id": 1, "product_code": "WIDGET", "product_name": "Widget", "quantity": 2},
+    ])
+    sheet = _run(per_order, so_lines).sheets[0]
+    # WIDGET (located) is walked first; UNKNOWN (unallocated) is last.
+    assert list(sheet.pick_lines["product_code"]) == ["WIDGET", "UNKNOWN"]
+    assert list(sheet.pick_lines["unallocated"]) == [False, True]
 
 
 def test_zero_and_negative_quantities_are_dropped():
