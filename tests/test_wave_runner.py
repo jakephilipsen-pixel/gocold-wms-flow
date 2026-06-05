@@ -77,10 +77,10 @@ def _fake_order(so_ref, code):
 
     Mirrors exactly the keys ``scripts/extract.py:_flatten_outbound_order_lines``
     reads, so it explodes into one usable per-line row (so_id, product_code,
-    quantity, customer_id, delivery_* …). The order has no resolvable pick
-    location in this environment (no assignments file), so it is skipped by the
-    wave generator — but the pipeline still runs end-to-end and writes a
-    manifest.
+    quantity, customer_id, delivery_* …). The SOH pull is stubbed by the
+    ``fake_cc`` fixture to return a live location for ``SOME-SKU``, so location
+    resolution now succeeds and the order can be waved — the pipeline runs
+    end-to-end and writes a manifest.
     """
     return {
         "id": f"id-{so_ref}",
@@ -191,6 +191,7 @@ def test_soh_failure_fails_the_run(tmp_path, fake_cc):
     result = run_wave_generation(settings, events.append)
     assert result.status == "failed"
     assert any(e.level == "error" for e in events)
+    assert not (result.out_dir / "manifest.json").exists()
 
 
 def test_cli_main_builds_settings_and_runs(tmp_path, monkeypatch):

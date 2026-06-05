@@ -218,7 +218,7 @@ def _pull_open_orders(
             n_orders += 1
             rows.extend(flatten_fn(order))
     except CartonCloudError as exc:
-        raise SystemExit(f"CC pull failed: {exc}") from exc
+        raise CartonCloudError(f"CC pull failed: {exc}") from exc
 
     print(f"  + {n_orders} orders -> {len(rows)} line items")
     if not rows:
@@ -438,7 +438,7 @@ def run_wave_generation(
              f"{result.summary['n_lines_unallocated']} unallocated lines, "
              f"{result.summary['n_orders_skipped']} skipped", level="ok")
 
-        # 10. write outputs
+        # 8. write outputs
         logo_path = (settings.logo_path
                      if settings.logo_path and Path(settings.logo_path).exists()
                      else None)
@@ -458,7 +458,7 @@ def run_wave_generation(
         if not result.skipped_orders.empty:
             result.skipped_orders.to_csv(out_dir / "skipped_orders.csv", index=False)
 
-        # 11. index + manifest
+        # 9. index + manifest
         _build_index_md(out_dir, result.sheets, result.skipped_orders,
                         _settings_dict(settings, audit_path))
         manifest = {
