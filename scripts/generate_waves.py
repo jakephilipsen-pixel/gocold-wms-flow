@@ -10,7 +10,8 @@ Pipeline:
      PO/products parquets in ``data/raw/``.
   4. Run routing (velocity -> tags -> full_pallet -> order_metrics ->
      classify_streams), reusing the existing pipeline.
-  5. Load CC locations + latest SKU assignments.
+  5. Pull live SKU locations from CC stock-on-hand (mandatory — no stale
+     fallback).
   6. Call ``generate_wave_pick_sheets``.
   7. For each wave, write PDF + picks CSV + orders CSV into
      ``data/processed/waves/<timestamp>/<wave_id>/``.
@@ -61,11 +62,8 @@ def main() -> int:
     p.add_argument("--status", type=str, default=None)
     p.add_argument("--customer-name", type=str, default=None)
     p.add_argument("--raw", type=Path, default=None)
-    p.add_argument("--locations", type=Path, default=None)
     p.add_argument("--dims", type=Path, default=None)
     p.add_argument("--rules", type=Path, default=None)
-    p.add_argument("--assignments", type=Path, default=None)
-    p.add_argument("--soh-fallback", action="store_true")
     p.add_argument("--pallet-ratio", type=float, default=0.9)
     p.add_argument("--pallet-fraction-threshold", type=float, default=None)
     p.add_argument("--early-release-cartons", type=int, default=None)
@@ -86,13 +84,10 @@ def main() -> int:
         kw["early_release_cartons"] = args.early_release_cartons
     if args.run_group_col is not None: kw["run_group_col"] = args.run_group_col
     if args.lines_per_hour is not None: kw["lines_per_hour"] = args.lines_per_hour
-    kw["soh_fallback"] = args.soh_fallback
     kw["pallet_ratio"] = args.pallet_ratio
     kw["raw_dir"] = args.raw
     kw["dims_path"] = args.dims
-    kw["locations_path"] = args.locations
     kw["rules_path"] = args.rules
-    kw["assignments_path"] = args.assignments
     kw["logo_path"] = args.logo
     kw["out_dir"] = args.out
     settings = WaveRunSettings(**kw)

@@ -22,7 +22,6 @@ def test_settings_defaults_pull_from_analysis_constants():
     assert s.pallet_fraction_threshold == 0.70
     assert s.early_release_cartons == 30
     assert s.run_group_col == "delivery_state"
-    assert s.soh_fallback is False
     assert s.lines_per_hour == 60
     assert s.pallet_ratio == 0.9
 
@@ -134,6 +133,15 @@ def fake_cc(monkeypatch):
         "wave_runner.CartonCloudClient.from_env",
         classmethod(lambda cls, **kw: object()),
     )
+    # SOH is now mandatory every gen — stub it to a single live location so
+    # the pipeline runs end-to-end and produces a real wave.
+    monkeypatch.setattr(
+        "wave_runner.get_sku_locations",
+        lambda client, **kw: [
+            {"product_code": "SOME-SKU", "location_name": "AA-01-01",
+             "location_id": "id-1", "qty": 5, "uom": "EA"},
+        ],
+    )
     return monkeypatch
 
 
@@ -164,6 +172,25 @@ def test_run_with_no_orders_is_empty(tmp_path, fake_cc):
     assert result.status == "empty"
     assert (result.out_dir / "index.md").exists()
     assert (result.out_dir / "manifest.json").exists()
+
+
+def test_soh_failure_fails_the_run(tmp_path, fake_cc):
+    from cc_client import CartonCloudError
+    orders = [_fake_order("SO-1", "SOME-SKU")]
+    fake_cc.setattr(
+        "wave_runner.search_outbound_orders",
+        lambda client, **kw: iter(orders),
+    )
+
+    def boom(client, **kw):
+        raise CartonCloudError("SOH report-run timed out")
+
+    fake_cc.setattr("wave_runner.get_sku_locations", boom)
+    events: list[ProgressEvent] = []
+    settings = WaveRunSettings(repo_root=_ROOT, out_dir=tmp_path / "waves")
+    result = run_wave_generation(settings, events.append)
+    assert result.status == "failed"
+    assert any(e.level == "error" for e in events)
 
 
 def test_cli_main_builds_settings_and_runs(tmp_path, monkeypatch):

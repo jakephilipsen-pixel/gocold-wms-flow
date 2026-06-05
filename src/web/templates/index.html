@@ -23,12 +23,9 @@
           <option value="delivery_postcode">delivery_postcode</option>
         </select>
       </label>
-      <label class="check">
-        <input type="checkbox" name="soh_fallback" value="true" checked>
-        Resolve pick locations from live CC stock-on-hand
-        <small>Needed until an approved assignments file exists. Adds a
-        Stock-on-Hand report run (~10–60s) to each generation.</small>
-      </label>
+      <p class="muted"><small>Pick locations are resolved from live CC
+        stock-on-hand on every run. If the SOH pull fails the run will
+        abort — no stale fallback.</small></p>
       <button class="btn" type="submit">⚡ Generate waves</button>
     </form>
   </section>

@@ -43,7 +43,6 @@ from cc_client import (
     get_sku_locations,
     search_outbound_orders,
 )
-from locations import load_cc_locations
 from locations.grammar import parse_location_name
 from output import generate_wave_pdf, write_wave_csvs
 
@@ -63,15 +62,12 @@ class WaveRunSettings:
     pallet_fraction_threshold: float = DEFAULT_PALLET_FRACTION_THRESHOLD
     early_release_cartons: int = DEFAULT_EARLY_RELEASE_CARTONS
     run_group_col: str = "delivery_state"
-    soh_fallback: bool = False
     lines_per_hour: int = DEFAULT_LINES_PER_HOUR
     pallet_ratio: float = DEFAULT_FULL_PALLET_RATIO
     # Optional explicit paths; None = resolve from repo_root at run time.
     raw_dir: Path | None = None
     dims_path: Path | None = None
-    locations_path: Path | None = None
     rules_path: Path | None = None
-    assignments_path: Path | None = None
     logo_path: Path | None = None
     out_dir: Path | None = None
 
@@ -201,16 +197,6 @@ def _latest_file(dirpath: Path, pattern: str) -> Path | None:
     return candidates[0] if candidates else None
 
 
-def _latest_assignments(processed_dir: Path) -> Path | None:
-    """Find the most recently written assignments.csv across assign_* dirs."""
-    candidates = sorted(
-        processed_dir.glob("assign_*/assignments.csv"),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
-    return candidates[0] if candidates else None
-
-
 def _pull_open_orders(
     client: CartonCloudClient,
     *,
@@ -321,7 +307,7 @@ def _build_index_md(
     (out_dir / "index.md").write_text("\n".join(lines))
 
 
-def _settings_dict(settings, audit_path, assignments_path):
+def _settings_dict(settings, audit_path):
     """Flatten the settings used for a run into a JSON-serialisable dict."""
     return {
         "status": settings.status,
@@ -330,8 +316,7 @@ def _settings_dict(settings, audit_path, assignments_path):
         "early_release_cartons": settings.early_release_cartons,
         "run_group_col": settings.run_group_col,
         "lines_per_hour": settings.lines_per_hour,
-        "soh_fallback": settings.soh_fallback,
-        "assignments_path": str(assignments_path) if assignments_path else None,
+        "placement_source": "live_soh",
         "audit_parquet": str(audit_path),
     }
 
@@ -379,7 +364,7 @@ def run_wave_generation(
                        "n_orders_skipped": 0, "n_pick_lines_total": 0}
             (out_dir / "manifest.json").write_text(json.dumps(
                 {"generated_at": datetime.now().isoformat(),
-                 "settings": _settings_dict(settings, audit_path, None),
+                 "settings": _settings_dict(settings, audit_path),
                  "summary": summary, "waves": []}, indent=2))
             emit("done", "No open orders to wave.", level="ok", **summary)
             return RunResult(stamp, out_dir, summary, "empty")
@@ -419,56 +404,38 @@ def run_wave_generation(
             f"{k}={int(v)}" for k, v in classification.counts_by_stream.items()),
             level="ok")
 
-        # 6. locations
-        loc_path = settings.locations_path or _latest_file(
-            repo_root / "data" / "locations", "*.xlsx")
-        if not loc_path or not loc_path.exists():
-            raise FileNotFoundError("no locations xlsx in data/locations/")
-        locations = load_cc_locations(loc_path)
-        emit("locations", f"loaded locations from {loc_path.name}", level="ok")
+        # 6. live SKU -> location from stock-on-hand (mandatory, fresh).
+        emit("locations", "pulling live stock-on-hand for SKU locations…")
+        codes = sorted({c for c in so_lines["product_code"].dropna().unique()})
+        soh_customer_id = (so_lines.iloc[0]["customer_id"]
+                           if "customer_id" in so_lines.columns and len(so_lines)
+                           else None)
+        if not soh_customer_id:
+            raise CartonCloudError(
+                "cannot resolve customer_id for SOH pull — no live stock "
+                "locations available; refusing to wave from stale data")
+        items = get_sku_locations(
+            client, customer_id=soh_customer_id, product_codes=codes)
+        sku_locations = build_sku_locations_from_soh(items)
+        if sku_locations.empty:
+            raise CartonCloudError(
+                "live SOH returned no SKU locations — refusing to generate a "
+                "wave with nothing placed")
+        emit("locations",
+             f"live SOH resolved {len(sku_locations)} SKU locations "
+             f"({len(items)} stock rows)", level="ok")
 
-        # 7. assignments
-        assignments_df = None
-        assignments_path = settings.assignments_path or _latest_assignments(
-            repo_root / "data" / "processed")
-        if assignments_path and assignments_path.exists():
-            assignments_df = pd.read_csv(assignments_path)
-            emit("assignments", f"{len(assignments_df)} SKU assignments", level="ok")
-        else:
-            emit("assignments", "no assignments file found — orders without "
-                                "a known location will be skipped", level="info")
-
-        # 8. SOH fallback (optional, off by default)
-        fallback_df = None
-        if settings.soh_fallback:
-            emit("assignments", "pulling SKU→location fallback via SOH…")
-            codes = sorted({c for c in so_lines["product_code"].dropna().unique()})
-            soh_customer_id = (so_lines.iloc[0]["customer_id"]
-                               if "customer_id" in so_lines.columns else None)
-            if soh_customer_id:
-                try:
-                    items = get_sku_locations(
-                        client, customer_id=soh_customer_id, product_codes=codes)
-                    if items:
-                        fallback_df = pd.DataFrame(items).rename(
-                            columns={"location_name": "location"})
-                        emit("assignments",
-                             f"SOH gave {len(fallback_df)} (SKU, location) rows",
-                             level="ok")
-                except CartonCloudError as exc:
-                    emit("assignments", f"SOH fallback failed: {exc}", level="info")
-
-        # 9. wave generation
+        # 7. wave generation
         emit("generate", "generating wave pick sheets…")
         result = generate_wave_pick_sheets(
             classification=classification, so_lines=snap.so_lines,
-            locations=locations, assignments=assignments_df,
-            sku_locations_fallback=fallback_df,
+            sku_locations=sku_locations,
             run_group_col=settings.run_group_col,
             early_release_cartons=settings.early_release_cartons)
         emit("generate",
              f"{result.summary['n_waves']} waves, "
              f"{result.summary['n_orders_total']} orders, "
+             f"{result.summary['n_lines_unallocated']} unallocated lines, "
              f"{result.summary['n_orders_skipped']} skipped", level="ok")
 
         # 10. write outputs
@@ -493,10 +460,10 @@ def run_wave_generation(
 
         # 11. index + manifest
         _build_index_md(out_dir, result.sheets, result.skipped_orders,
-                        _settings_dict(settings, audit_path, assignments_path))
+                        _settings_dict(settings, audit_path))
         manifest = {
             "generated_at": datetime.now().isoformat(),
-            "settings": _settings_dict(settings, audit_path, assignments_path),
+            "settings": _settings_dict(settings, audit_path),
             "summary": result.summary,
             "waves": [
                 {"wave_id": s.wave_id, "stream": s.stream,
