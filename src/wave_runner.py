@@ -44,6 +44,7 @@ from cc_client import (
     search_outbound_orders,
 )
 from locations import load_cc_locations
+from locations.grammar import parse_location_name
 from output import generate_wave_pdf, write_wave_csvs
 
 log = logging.getLogger("wave_runner")
@@ -95,6 +96,69 @@ class RunResult:
 
 
 ProgressCallback = Callable[[ProgressEvent], None]
+
+# ---------------------------------------------------------------------------
+# SOH → pick-face lookup helper
+# ---------------------------------------------------------------------------
+
+_SKU_LOC_COLS = ["product_code", "location", "aisle", "bay", "level", "sublevel"]
+
+
+def build_sku_locations_from_soh(items: list[dict]) -> pd.DataFrame:
+    """Collapse live SOH rows into one pick-face location per SKU.
+
+    ``items`` are the dicts returned by ``cc_client.get_sku_locations``
+    (``product_code``, ``location_name``, ``location_id``, ``qty``, ``uom``).
+    Each location name is parsed through the warehouse grammar to recover
+    walk-order structure (aisle/bay/level/sublevel) and pick-face role.
+
+    Selection per SKU (best first):
+      1. pick faces before reserve/unknown,
+      2. lowest grammar position (1 before 2),
+      3. walk order (aisle, bay, level, sublevel).
+
+    A SKU with only reserve locations still resolves to its best reserve —
+    that is a real, live location, not ``unallocated``. Returns columns
+    ``product_code, location, aisle, bay, level, sublevel`` (one row per SKU).
+    """
+    if not items:
+        return pd.DataFrame(columns=_SKU_LOC_COLS)
+
+    candidates: list[dict] = []
+    for it in items:
+        code = it.get("product_code")
+        name = it.get("location_name")
+        if not code or not name:
+            continue
+        info = parse_location_name(name)
+        role_rank = 0 if info.role_by_grammar == "pick_face" else 1
+        candidates.append({
+            "product_code": code,
+            "location": name,
+            "aisle": info.aisle,
+            "bay": info.bay,
+            "level": info.level,
+            "sublevel": info.sublevel,
+            "_role_rank": role_rank,
+            "_position": info.position if info.position is not None else 99,
+            "_aisle_sort": info.aisle or "zz",
+            "_bay_sort": info.bay if info.bay is not None else 9999,
+            "_level_sort": info.level if info.level is not None else 9999,
+            "_sub_sort": info.sublevel if info.sublevel is not None else 9999,
+        })
+
+    if not candidates:
+        return pd.DataFrame(columns=_SKU_LOC_COLS)
+
+    df = pd.DataFrame(candidates)
+    df = df.sort_values(
+        ["product_code", "_role_rank", "_position",
+         "_aisle_sort", "_bay_sort", "_level_sort", "_sub_sort"],
+        kind="mergesort",
+    )
+    best = df.drop_duplicates("product_code", keep="first").reset_index(drop=True)
+    return best[_SKU_LOC_COLS]
+
 
 # ---------------------------------------------------------------------------
 # Lazy loader for the SO line flattener that lives in scripts/extract.py.
