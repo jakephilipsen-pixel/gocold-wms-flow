@@ -22,6 +22,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+import pandas as pd
+
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -391,7 +393,7 @@ def _wrap_cell(
     return Paragraph(html, style)
 
 
-def _pick_lines_table(sheet: WavePickSheet) -> Table:
+def _pick_lines_table(pick_lines: pd.DataFrame) -> Table:
     header = [
         _wrap_cell("Walk #", THEME.body_font_bold, 10),
         _wrap_cell("Location", THEME.body_font_bold, 10),
@@ -403,7 +405,7 @@ def _pick_lines_table(sheet: WavePickSheet) -> Table:
         _wrap_cell("Done", THEME.body_font_bold, 10),
     ]
     rows = [header]
-    for r in sheet.pick_lines.itertuples(index=False):
+    for r in pick_lines.itertuples(index=False):
         rows.append([
             _wrap_cell(
                 f"<b>{int(r.walk_index)}</b>",
@@ -573,16 +575,27 @@ def generate_wave_pdf(
 
     # ---- pick lines section ----
     story.append(Paragraph(
-        "Pick lines &mdash; walk order",
-        styles["section_h"],
-    ))
+        "Pick lines &mdash; walk order", styles["section_h"]))
     story.append(Spacer(1, 4 * mm))
-    if sheet.pick_lines.empty:
+    pl = sheet.pick_lines
+    if pl.empty:
         story.append(Paragraph(
-            "<i>No pick lines for this wave.</i>", styles["body"],
-        ))
+            "<i>No pick lines for this wave.</i>", styles["body"]))
     else:
-        story.append(_pick_lines_table(sheet))
+        if "unallocated" in pl.columns:
+            located = pl[~pl["unallocated"].fillna(False)]
+            unalloc = pl[pl["unallocated"].fillna(False)]
+        else:
+            located, unalloc = pl, pl.iloc[0:0]
+        if not located.empty:
+            story.append(_pick_lines_table(located))
+        if not unalloc.empty:
+            story.append(Spacer(1, 6 * mm))
+            story.append(Paragraph(
+                "&#9888; UNALLOCATED &mdash; no live stock location, "
+                "locate manually", styles["callout"]))
+            story.append(Spacer(1, 3 * mm))
+            story.append(_pick_lines_table(unalloc))
 
     # ---- orders section ----
     story.append(PageBreak())
