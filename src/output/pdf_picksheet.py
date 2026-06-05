@@ -33,6 +33,7 @@ from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
     Image,
+    KeepTogether,
     PageBreak,
     PageTemplate,
     Paragraph,
@@ -472,6 +473,72 @@ def _pick_lines_table(pick_lines: pd.DataFrame) -> Table:
     return table
 
 
+def _unallocated_table(pick_lines: pd.DataFrame) -> Table:
+    """Table for unallocated pick lines.
+
+    Identical to ``_pick_lines_table`` in style but omits the
+    "Walk #" and "Run total" columns — both are meaningless for lines
+    that have no confirmed stock location.  Six columns:
+      Location | SKU | Description | Qty | Orders | Done
+    """
+    col_labels = ["Location", "SKU", "Description", "Qty", "Orders", "Done"]
+    header_white_style = ParagraphStyle(
+        "header_white_unalloc",
+        fontName=THEME.body_font_bold,
+        fontSize=10,
+        leading=12,
+        textColor=colors.white,
+        alignment=1,
+    )
+    header = [Paragraph(label, header_white_style) for label in col_labels]
+    rows = [header]
+    for r in pick_lines.itertuples(index=False):
+        rows.append([
+            _wrap_cell(
+                _esc(r.location), THEME.mono_font, 11, "center",
+            ),
+            _wrap_cell(_esc(r.product_code), THEME.body_font_bold, 9),
+            _wrap_cell(_esc(r.product_name), THEME.body_font, 9),
+            _wrap_cell(
+                f"<b>{int(r.qty_cartons):,}</b>",
+                THEME.body_font_bold, 13, "center",
+            ),
+            _wrap_cell(_esc(r.contributing_so_refs), THEME.body_font, 8),
+            _wrap_cell("", THEME.body_font, 9),
+        ])
+
+    # Widths sum to 189mm — same total as _pick_lines_table (189mm).
+    # The freed "Walk #" (13mm) + "Run total" (16mm) = 29mm is spread
+    # across Description (+17mm) and Orders (+12mm).
+    col_widths = [
+        26 * mm,   # col 0 — location
+        22 * mm,   # col 1 — sku
+        63 * mm,   # col 2 — description  (46+17)
+        14 * mm,   # col 3 — qty
+        52 * mm,   # col 4 — orders       (40+12)
+        12 * mm,   # col 5 — done
+    ]
+    table = Table(rows, colWidths=col_widths, repeatRows=1)
+
+    style = TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), THEME.dark),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        # col 0 = Location, col 3 = Qty — centre those in data rows
+        ("ALIGN", (0, 1), (0, -1), "CENTER"),
+        ("ALIGN", (3, 1), (3, -1), "CENTER"),
+        ("GRID", (0, 0), (-1, -1), 0.3, THEME.dark),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, THEME.light_grey]),
+        # Bold border on the "Done" tick-box column
+        ("BOX", (-1, 1), (-1, -1), 1.0, THEME.dark),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+    ])
+    table.setStyle(style)
+    return table
+
+
 def _orders_table(sheet: WavePickSheet) -> Table:
     header_white_style = ParagraphStyle(
         "header_white",
@@ -590,12 +657,14 @@ def generate_wave_pdf(
         if not located.empty:
             story.append(_pick_lines_table(located))
         if not unalloc.empty:
-            story.append(Spacer(1, 6 * mm))
-            story.append(Paragraph(
-                "&#9888; UNALLOCATED &mdash; no live stock location, "
-                "locate manually", styles["callout"]))
-            story.append(Spacer(1, 3 * mm))
-            story.append(_pick_lines_table(unalloc))
+            story.append(KeepTogether([
+                Spacer(1, 6 * mm),
+                Paragraph(
+                    "&#9888; UNALLOCATED &mdash; no live stock location, "
+                    "locate manually", styles["callout"]),
+                Spacer(1, 3 * mm),
+                _unallocated_table(unalloc),
+            ]))
 
     # ---- orders section ----
     story.append(PageBreak())

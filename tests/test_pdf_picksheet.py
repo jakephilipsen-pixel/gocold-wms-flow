@@ -48,6 +48,8 @@ def test_unallocated_block_adds_content(tmp_path):
 
     s2 = _sheet()
     s2.pick_lines = s2.pick_lines[~s2.pick_lines["unallocated"]].copy()
+    s2.total_lines = len(s2.pick_lines)
+    s2.total_cartons = int(s2.pick_lines["qty_cartons"].sum())
     smaller = tmp_path / "located.pdf"
     generate_wave_pdf(s2, smaller)
 
