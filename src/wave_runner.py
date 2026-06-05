@@ -140,11 +140,7 @@ def build_sku_locations_from_soh(items: list[dict]) -> pd.DataFrame:
             "level": info.level,
             "sublevel": info.sublevel,
             "_role_rank": role_rank,
-            "_position": info.position if info.position is not None else 99,
-            "_aisle_sort": info.aisle or "zz",
-            "_bay_sort": info.bay if info.bay is not None else 9999,
-            "_level_sort": info.level if info.level is not None else 9999,
-            "_sub_sort": info.sublevel if info.sublevel is not None else 9999,
+            "position": info.position,  # None stays None; sorts last via na_position
         })
 
     if not candidates:
@@ -152,9 +148,9 @@ def build_sku_locations_from_soh(items: list[dict]) -> pd.DataFrame:
 
     df = pd.DataFrame(candidates)
     df = df.sort_values(
-        ["product_code", "_role_rank", "_position",
-         "_aisle_sort", "_bay_sort", "_level_sort", "_sub_sort"],
+        ["product_code", "_role_rank", "position", "aisle", "bay", "level", "sublevel"],
         kind="mergesort",
+        na_position="last",
     )
     best = df.drop_duplicates("product_code", keep="first").reset_index(drop=True)
     return best[_SKU_LOC_COLS]
