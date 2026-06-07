@@ -11,6 +11,12 @@ from .full_pallet import (
     run_full_pallet_analysis,
     DEFAULT_FULL_PALLET_RATIO,
 )
+from .dispatch_link import (
+    FLAGGED_DISPATCH,
+    attach_dispatch_runs,
+    find_latest_dispatch_plan,
+    load_dispatch_link,
+)
 from .slotting import SlottingResult, recommend_slotting
 from .assignment import AssignmentResult, assign_skus_to_locations
 from .routing import (
@@ -49,6 +55,8 @@ __all__ = [
     "load_dimensions",
     "apply_tags", "FULL_PALLET_BRANDS",
     "FullPalletAnalysis", "run_full_pallet_analysis", "DEFAULT_FULL_PALLET_RATIO",
+    "FLAGGED_DISPATCH", "find_latest_dispatch_plan",
+    "load_dispatch_link", "attach_dispatch_runs",
     "SlottingResult", "recommend_slotting",
     "AssignmentResult", "assign_skus_to_locations",
     "OrderMetricsResult", "StreamClassification", "ConsigneeProfile", "WavePlan",
