@@ -47,7 +47,7 @@ def create_app(repo_root: Path | None = None) -> FastAPI:
         customer_name: str = Form(""),
         pallet_fraction_threshold: float = Form(0.70),
         early_release_cartons: int = Form(30),
-        run_group_col: str = Form("delivery_state"),
+        run_group_col: str = Form("predicted_run"),
     ):
         settings = WaveRunSettings(
             repo_root=repo_root, status=status,

@@ -208,3 +208,9 @@ def test_download_traversal_404(tmp_path, client):
     _make_run(base, "20260604_081200")
     r = client.get("/runs/20260604_081200/files/VIC-bench-01/..%2f..%2fmanifest.json")
     assert r.status_code == 404
+
+
+def test_index_form_defaults_to_predicted_run(client):
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "predicted_run" in resp.text
