@@ -1,9 +1,18 @@
-# Run-grouped, two-stream wave picking — design
+# Run-grouped, stream-split wave picking — design
 
 **Date:** 2026-06-07
-**Status:** approved (brainstorm) — pending spec review
+**Status:** approved (brainstorm) — revised after code reconnaissance
 **Author:** Jake + Claude
 **Supersedes/extends:** `2026-06-04-wave-pick-console-design.md`, `2026-06-05-wave-soh-source-of-truth-design.md`
+
+> **Revision note (2026-06-07):** the first draft proposed a 2-stream (bench/pallet)
+> model and a new cube classifier. Reading `src/analysis/routing.py` showed both
+> already exist: a **3-stream model** (`1_pallet_pick` / `2_wave_bypass` /
+> `3_wave_bench`, plus `0_unclassified`) locked with the operator in May 2026, and
+> **cube-based pallet classification** (`compute_order_metrics.pallet_fraction_cube`
+> + `classify_streams` rule R4). This spec is revised to build *on* that, not
+> replace it. Decisions: keep the 3 streams; cube-uncertain (`0_unclassified`)
+> rides the pallet sheets plus a measure-list.
 
 ## Problem
 
@@ -25,15 +34,22 @@ Two operator problems to solve:
 
 ## Goals (MVP — "operational ASAP")
 
-The MVP is the **paperwork loop**: live data in, run-grouped two-stream
+The MVP is the **paperwork loop**: live data in, run-grouped stream-split
 picksheets out, printed at the bench (Zebra ZT411). Everything else stays manual.
 
 - Join dispatch run-prediction into wave generation (two-step, file-based).
-- Group picking by predicted run.
-- Within each run, split orders into **BENCH** (carton picks) and **PALLET**
-  (pick-to-pallet) streams.
-- Drive the pallet decision from **carton cube**, not carton count.
-- Surface uncertain/unmeasured orders rather than silently mis-routing them.
+- **Group picking by predicted run** (swap `run_group_col` from `delivery_state`
+  to `predicted_run` — the hook `plan_waves` already documents).
+- Keep the existing **3-stream** split (`1_pallet_pick` / `2_wave_bypass` /
+  `3_wave_bench`) within each run.
+- **Route dispatch-flagged orders to the pallet stream** (new rule).
+- **Produce pallet-stream paperwork** — today the sheet generator handles streams
+  2 + 3 only; stream 1 (and `0_unclassified`) produce no sheets. This is the main
+  build.
+- Keep the **cube-based** pallet trigger that already exists; **calibrate** its
+  threshold from history rather than guessing.
+- `0_unclassified` (missing-dim / cube-uncertain) orders ride the pallet sheets
+  and have their unmeasured SKUs surfaced in a measure-list.
 - Read-only against CartonCloud throughout. No CC writes.
 
 ## Non-goals (explicitly out of the MVP cut)
@@ -62,104 +78,124 @@ CartonCloud (read-only)
    ▼            ▼
 generate_waves  ◀── reads suggested_runs.csv + review.csv  +  live SOH  +  local dims
    │
-   ├─ attach (predicted_run, flag) to each AWAITING_PICK_AND_PACK SO
-   ├─ classify each order: BENCH or PALLET (see §Stream classification)
-   ├─ for each RUN, for each STREAM present:
-   │     emit run_<R>_<stream>_picksheet.pdf + run_<R>_<stream>_picks.csv
-   │                                          + run_<R>_<stream>_orders.csv
+   ├─ attach (predicted_run, dispatch_flag) to each AWAITING_PICK_AND_PACK order
+   ├─ classify each order into a stream (routing.classify_streams + new R2b):
+   │     1_pallet_pick  (cube≥thr | full-pallet line | dispatch-flagged | consignee rule)
+   │     2_wave_bypass  (small, all direct-to-pallet SKUs)
+   │     3_wave_bench   (small, has a repack/pickbench SKU)
+   │     0_unclassified (missing dims → rides pallet sheets)
+   ├─ group by predicted_run (run_group_col="predicted_run"); within each run,
+   │     streams 2/3 wave with cutoff/early-release; streams 1/0 = one immediate
+   │     sheet per (run, stream)
+   ├─ emit per wave_id: <wave_id>_picksheet.pdf + _picks.csv + _orders.csv
    └─ index.md: runs × streams × {orders, pick lines, cartons}
                 + UNALLOCATED (SOH-miss) section
-                + cube_uncertain SKUs-to-measure list
+                + SKUs-to-measure list (cube-uncertain)
    ▼
 print at pick bench (Zebra ZT411)
 ```
 
-## Stream classification (the core rule)
+## Stream classification (what exists, what changes)
 
-For each order, compute **estimated cube**:
+Cube is **already computed** per order. `compute_order_metrics` (routing.py:137)
+joins `dims.outer_cube_mm3` (produced by `dim_loader.py:212`) onto every SO line,
+sums to `total_cube_mm3`, and derives `pallet_fraction_cube = total_cube_mm3 /
+PALLET_USABLE_CUBE_MM3` (pallet ref 1165×1165×1400mm). `pallet_fraction` is the
+max of the cube and position methods (belt-and-braces). `classify_streams`
+(routing.py:426) already applies, first-match-wins:
 
 ```
-order_cube_mm3 = Σ over lines ( line_qty × dims.outer_cube_mm3[sku] )
+R1 consignee override_stream set         -> that stream
+R2 consignee min_cartons hit             -> 1_pallet_pick
+R3 order has a full_pallet_line          -> 1_pallet_pick
+R4 pallet_fraction >= threshold          -> 1_pallet_pick   (the cube trigger)
+R5 has_unknown_pickbench (missing dims)  -> 0_unclassified
+R6 has_pickbench_sku                     -> 3_wave_bench
+R7 all_direct_skus                       -> 2_wave_bypass
+R8 fallback                              -> 0_unclassified
 ```
 
-`outer_cube_mm3` is already produced per SKU by `dim_loader` (`dim_loader.py:212`),
-so no new dimension work is required.
+So "use carton dims/cube for the pallet decision" is **R4, already built**. Carton
+count is noisy (few clean 100-of-one-carton orders; real pallet picks run ~60–90
+mixed cartons), so the cube fraction is the honest signal — this is exactly what
+R4 does.
 
-An order routes to the **PALLET** stream if **any** of:
+**The one new rule.** Insert a dispatch-flag rule so low-confidence orders build to
+a pallet rather than landing on a confident-looking bench sheet:
 
-1. **Cube trigger:** `order_cube_mm3 (from known-dim lines) ≥ PALLET_CUBE_THRESHOLD`.
-2. **Flagged address:** the dispatch `flag` is in
-   `{mixed, new_address, stale, no_address}`, or the SO is absent from the plan
-   (`flag = no_run`).
-3. **Cube uncertain:** order cube from known lines is below threshold **but** the
-   order contains one or more lines whose SKU has no dims — we cannot rule out
-   that it is large, so it routes to PALLET/review and its missing SKUs are
-   listed for measurement.
+```
+R2b dispatch_flag in {mixed,new_address,stale,no_address,no_run} -> 1_pallet_pick
+```
 
-Otherwise the order routes to **BENCH** (stable run, all lines measured, cube
-below threshold).
+Placed after R2 and before R3 (a distrusted run beats the cube/bench decision).
+`dispatch_flag` arrives as a column on `per_order` via the dispatch join (below);
+`classify_streams` reads it with `getattr(row, "dispatch_flag", None)` so callers
+that don't supply it are unaffected.
 
-Rationale: carton count is noisy (few clean 100-of-one-carton orders; real pallet
-picks run ~60–90 mixed cartons), so cube is the honest signal. This realises the
-`patterns.py:51` TODO ("replace with estimated cube > pallet") and lets us
-**retire the brand-gated `detect_full_pallet_lines` heuristic** as the primary
-trigger. Single-SKU full-pallet orders are high-cube (→ PALLET) and also
-address-predictable (→ grouped onto their stable run by the dispatch learner), so
-they need no special-case logic.
+**Cube-uncertain.** `0_unclassified` (R5, missing dims) is the spec's
+cube-uncertain bucket. Per the approved decision it **rides the pallet sheets**
+(handled by a human on a pallet) and its unmeasured SKUs are listed in the index
+measure-list. No separate stream needed.
 
 ### Threshold calibration
 
-`PALLET_CUBE_THRESHOLD` is a configurable cube in m³ (default surfaced as a
-constant + `--pallet-cube` CLI flag / console field). Default is **calibrated
-from history**, not guessed:
+The cube threshold is the existing `pallet_fraction_threshold`
+(`DEFAULT_PALLET_FRACTION_THRESHOLD = 0.70`, i.e. 70% of a pallet by cube),
+already wired through `WaveRunSettings`, the `--pallet-fraction-threshold` CLI flag,
+and the console form. We **calibrate** it, not add a new knob:
 
-- A one-off calibration step computes the order-cube distribution over recent SOs
-  (95k+ historical line-items × dims) and reports where the ~60–90-carton pallet
-  picks fall.
-- The default threshold is set at that knee. Operators can override per-run
-  without a code change.
+- A one-off script computes the `pallet_fraction_cube` distribution over a recent
+  snapshot and reports percentiles + where the ~60–90-carton pallet picks fall.
+- The recommended default is set at that knee; operators override per-run via the
+  existing flag/form. No code change to retune.
 
 ## Components
 
-All new modules are small, single-purpose, and unit-tested in isolation.
-
 | Component | Type | Responsibility |
 |---|---|---|
-| `run_link` | new | Load `suggested_runs.csv` (+ `review.csv`); return `so_id/so_ref → (predicted_run, flag, confidence)`. SO in the wave snapshot but missing from the plan → `flag=no_run`. Never drops an SO. |
-| `stream_classifier` | new (absorbs cube logic) | Compute `order_cube_mm3` from dims; apply the §Stream classification rules; return per-order `stream ∈ {BENCH, PALLET}` + a reason (`cube`, `flagged:<flag>`, `cube_uncertain`, `no_run`). |
-| `cube` helper | new (small) | `order_cube_mm3(order_lines, dims)` + missing-dim detection. Pure, trivially testable. |
-| `wave_runner` | change | `run_group_col` → `predicted_run`; add `stream` as the secondary split key; thread `pallet_cube_threshold` and the plan path through `WaveRunSettings`. |
-| calibration | new script/notebook | Order-cube distribution → recommended default threshold. Run once; documents the chosen default. |
-| `src/web` console | minimal change | Run page surfaces the runs × streams breakdown and the cube_uncertain list. No scan-verify UI (Phase 2). |
+| `dispatch_link` (`src/analysis/dispatch_link.py`) | **new, small** | Find the latest `data/processed/dispatch/<stamp>/`; load `suggested_runs.csv` + `review.csv`; return `so_id → (predicted_run, dispatch_flag, confidence)`. Plus `attach_dispatch_runs(per_order, link)` → adds `predicted_run` + `dispatch_flag` columns; SO missing from the plan → `predicted_run="no_run"`, `dispatch_flag="no_run"`. Never drops an order. |
+| `classify_streams` (routing.py) | **change** | Add rule R2b (dispatch-flag → `1_pallet_pick`). |
+| `plan_waves` (routing.py) | **change** | New `include_immediate_streams: bool=False`. When true, also emit one wave per `(receive_date, run_group, stream)` for `1_pallet_pick` and `0_unclassified` with no accumulation (`release_reason="immediate"`), so the existing sheet machinery produces pallet/unclassified sheets. Streams 2/3 keep their cutoff/early-release behaviour. |
+| `generate_wave_pick_sheets` (wave_picks.py) | **change** | Pass `include_immediate_streams` through to `plan_waves`. Everything downstream (location resolution, consolidation, walk-sort, `WavePickSheet`) already handles any stream label. |
+| `wave_runner` | **change** | After `compute_order_metrics`, call `attach_dispatch_runs`; default `run_group_col="predicted_run"`; thread `dispatch_plan_dir` + `include_pallet_sheets=True` through `WaveRunSettings`; clean-fail (`CartonCloudError`-style) if no dispatch plan is found. |
+| `_build_index_md` (wave_runner) | **change** | Add a runs × streams roll-up and a "SKUs to measure" list (SO-line SKUs with `measurement_complete=False`). |
+| calibration script (`scripts/calibrate_pallet_cube.py`) | **new** | Cube-fraction distribution → recommended threshold. Run once. |
+| CLI / console | **tiny** | CLI already has `--run-group-col` + `--pallet-fraction-threshold`; add `--dispatch-plan`. Console: default `run_group_col` form value → `predicted_run`. |
 
-The existing sheet generators (`generate_wave_pick_sheets`, `generate_wave_pdf`,
-`write_wave_csvs`) are reused unchanged — only the grouping key and sheet labels
-change. Live-SOH placement and per-line UNALLOCATED handling (recent work) carry
-through per stream untouched.
+The existing sheet generators (`generate_wave_pdf`, `write_wave_csvs`) and the
+live-SOH placement + per-line UNALLOCATED handling are reused **unchanged** — only
+the grouping key, the new rule, and the immediate-stream waves are added.
 
 ## Flagged orders — how "review" is satisfied
 
 The chosen wiring is two-step (build_dispatch → wave reads the plan). The human
 gate is preserved **without** a new approval UI: orders the predictor is unsure
 about (`mixed/new_address/stale/no_address`) and orders missing from the plan
-(`no_run`) are auto-routed to the PALLET stream, where a human builds/sorts them
-on a pallet rather than the system guessing them onto a confident-looking bench
-sheet. The dispatcher can still correct a run in the existing runs console before
-generating waves. This is the "flagged + full-pallet merge" the operator asked
-for: PALLET = `cube ≥ threshold` ∪ `flagged-address` ∪ `cube_uncertain`.
+(`no_run`) are auto-routed (rule R2b) to `1_pallet_pick`, where a human builds/sorts
+them on a pallet rather than the system guessing them onto a confident-looking
+bench sheet. The dispatcher can still correct a run in the existing runs console
+before generating waves. This realises the "flagged + full-pallet merge": the
+pallet stream now collects `cube ≥ threshold` (R4) ∪ full-pallet line (R3) ∪
+dispatch-flagged (R2b) ∪ consignee rule (R1/R2), and `0_unclassified` rides the
+same sheets.
 
 ## Outputs
+
+Each wave (including the new immediate pallet/unclassified waves) gets its own
+directory named by the existing `_make_wave_id`
+(`{receive_date}_{run_group}_S{stream_short}_W{idx}`):
 
 ```
 data/processed/waves/<stamp>/
   index.md
-  run_<R>_bench_picksheet.pdf   run_<R>_bench_picks.csv   run_<R>_bench_orders.csv
-  run_<R>_pallet_picksheet.pdf  run_<R>_pallet_picks.csv  run_<R>_pallet_orders.csv
+  2026-06-07_RUN-3_S1_W01/  <wave_id>_picksheet.pdf  _picks.csv  _orders.csv   # pallet, run 3
+  2026-06-07_RUN-3_S3_W01/  ...                                                # bench, run 3
+  2026-06-07_RUN-5_S2_W01/  ...                                                # bypass, run 5
   ...
 ```
 
-`index.md` lists every (run, stream) with order/pick-line/carton counts, the
-UNALLOCATED (SOH-miss) section, and the `cube_uncertain` SKUs-to-measure list.
+`index.md` lists every wave (run, stream, counts), the UNALLOCATED (SOH-miss)
+section, and the SKUs-to-measure list (cube-uncertain).
 
 ## Error handling (read-only)
 
@@ -175,19 +211,21 @@ UNALLOCATED (SOH-miss) section, and the `cube_uncertain` SKUs-to-measure list.
 
 ## Testing
 
-Floor-facing logic is locked by tests:
+Floor-facing logic is locked by tests (extending the existing `tests/`):
 
-- `cube`: order cube sums correctly; missing-dim lines flagged.
-- `stream_classifier`: cube ≥ threshold → PALLET; flagged-address → PALLET;
-  below-threshold + missing dims → PALLET (`cube_uncertain`); stable + measured +
-  below threshold → BENCH; reason string correct for each.
-- `run_link`: matched SO; SO missing from plan → `no_run`; flag/confidence
-  passthrough.
-- grouping reconciliation: Σ(lines across all run×stream sheets) == total input
-  pick lines + UNALLOCATED; nothing dropped or double-counted.
-- end-to-end on a fixture snapshot (SOs + dims + a fixture plan) → expected sheet
-  set.
-- read-only guard regression stays green.
+- `dispatch_link`: latest-plan discovery; `suggested_runs.csv` + `review.csv`
+  merge; `attach_dispatch_runs` adds `predicted_run`/`dispatch_flag`; SO missing
+  from plan → `no_run`; never drops an order.
+- `classify_streams` R2b: each flagged value → `1_pallet_pick`; non-flagged
+  unaffected; absent `dispatch_flag` column is harmless (existing tests stay green).
+- `plan_waves` immediate streams: `include_immediate_streams=True` emits one wave
+  per (run, stream) for `1_pallet_pick` and `0_unclassified`, no accumulation;
+  streams 2/3 unchanged when false.
+- grouping reconciliation: Σ(lines across all wave sheets) == total input pick
+  lines + UNALLOCATED; nothing dropped or double-counted.
+- `wave_runner` end-to-end on a fixture (SOs + dims + a fixture dispatch plan) →
+  expected per-(run,stream) sheet set; clean-fail when no plan present.
+- the existing read-only guard + full suite stay green.
 
 ## Assumptions & open questions
 
