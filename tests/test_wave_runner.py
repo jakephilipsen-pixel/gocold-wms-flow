@@ -15,15 +15,30 @@ from wave_runner import (
 _ROOT = Path(__file__).resolve().parent.parent
 
 
+def _write_dispatch_plan(dir_path, rows):
+    """Write a minimal suggested_runs.csv so wave_runner can link runs.
+
+    rows: list of (so_id, predicted_run, flag) tuples.
+    """
+    import pandas as pd
+    dir_path.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [(f"ref-{sid}", sid, run, 0.9, flag) for sid, run, flag in rows],
+        columns=["so_ref", "so_id", "predicted_run", "confidence", "flag"],
+    ).to_csv(dir_path / "suggested_runs.csv", index=False)
+
+
 def test_settings_defaults_pull_from_analysis_constants():
     s = WaveRunSettings(repo_root=Path("/tmp/repo"))
     assert s.status == "AWAITING_PICK_AND_PACK"
     assert s.customer_name is None
-    assert s.pallet_fraction_threshold == 0.70
+    assert s.pallet_fraction_threshold == 0.51
     assert s.early_release_cartons == 30
-    assert s.run_group_col == "delivery_state"
+    assert s.run_group_col == "predicted_run"
     assert s.lines_per_hour == 60
     assert s.pallet_ratio == 0.9
+    assert s.include_pallet_sheets is True
+    assert s.dispatch_plan_dir is None
 
 
 def test_progress_event_levels_default_info():
@@ -152,7 +167,11 @@ def test_run_emits_progress_and_writes_run(tmp_path, fake_cc):
         lambda client, **kw: iter(orders),
     )
     events: list[ProgressEvent] = []
-    settings = WaveRunSettings(repo_root=_ROOT, out_dir=tmp_path / "waves")
+    plan_dir = tmp_path / "dispatch"
+    _write_dispatch_plan(plan_dir, [("id-SO-1", "RUN-A", "stable")])
+    settings = WaveRunSettings(
+        repo_root=_ROOT, out_dir=tmp_path / "waves",
+        dispatch_plan_dir=plan_dir)
     result = run_wave_generation(settings, events.append)
 
     assert result.status in {"success", "empty"}
@@ -167,7 +186,11 @@ def test_run_with_no_orders_is_empty(tmp_path, fake_cc):
         lambda client, **kw: iter([]),
     )
     events: list[ProgressEvent] = []
-    settings = WaveRunSettings(repo_root=_ROOT, out_dir=tmp_path / "waves")
+    plan_dir = tmp_path / "dispatch"
+    _write_dispatch_plan(plan_dir, [("id-SO-1", "RUN-A", "stable")])
+    settings = WaveRunSettings(
+        repo_root=_ROOT, out_dir=tmp_path / "waves",
+        dispatch_plan_dir=plan_dir)
     result = run_wave_generation(settings, events.append)
     assert result.status == "empty"
     assert (result.out_dir / "index.md").exists()
@@ -187,11 +210,51 @@ def test_soh_failure_fails_the_run(tmp_path, fake_cc):
 
     fake_cc.setattr("wave_runner.get_sku_locations", boom)
     events: list[ProgressEvent] = []
-    settings = WaveRunSettings(repo_root=_ROOT, out_dir=tmp_path / "waves")
+    plan_dir = tmp_path / "dispatch"
+    _write_dispatch_plan(plan_dir, [("id-SO-1", "RUN-A", "stable")])
+    settings = WaveRunSettings(
+        repo_root=_ROOT, out_dir=tmp_path / "waves",
+        dispatch_plan_dir=plan_dir)
     result = run_wave_generation(settings, events.append)
     assert result.status == "failed"
     assert any(e.level == "error" for e in events)
     assert not (result.out_dir / "manifest.json").exists()
+
+
+def test_run_grouping_requires_a_dispatch_plan(tmp_path, fake_cc):
+    orders = [_fake_order("SO-1", "SOME-SKU")]
+    fake_cc.setattr(
+        "wave_runner.search_outbound_orders",
+        lambda client, **kw: iter(orders),
+    )
+    events: list[ProgressEvent] = []
+    # predicted_run grouping but NO dispatch plan anywhere -> clean fail.
+    settings = WaveRunSettings(
+        repo_root=_ROOT, out_dir=tmp_path / "waves",
+        dispatch_plan_dir=tmp_path / "does-not-exist")
+    result = run_wave_generation(settings, events.append)
+    assert result.status == "failed"
+    assert any("dispatch plan" in e.message.lower()
+               for e in events if e.level == "error")
+
+
+def test_index_lists_skus_to_measure(tmp_path, fake_cc):
+    # SOME-SKU is not in the real dims file -> it should appear in the
+    # "SKUs to measure" section of index.md.
+    orders = [_fake_order("SO-1", "SOME-SKU")]
+    fake_cc.setattr(
+        "wave_runner.search_outbound_orders",
+        lambda client, **kw: iter(orders),
+    )
+    plan_dir = tmp_path / "dispatch"
+    _write_dispatch_plan(plan_dir, [("id-SO-1", "RUN-A", "stable")])
+    settings = WaveRunSettings(
+        repo_root=_ROOT, out_dir=tmp_path / "waves",
+        dispatch_plan_dir=plan_dir)
+    result = run_wave_generation(settings, [].append)
+    index = (result.out_dir / "index.md").read_text()
+    assert "SKUs to measure" in index
+    assert "SOME-SKU" in index
 
 
 def test_cli_main_builds_settings_and_runs(tmp_path, monkeypatch):

@@ -32,5 +32,6 @@ label{display:block;font-size:13px;color:var(--muted);margin-bottom:12px}
 .stat .n{font-size:30px;font-weight:700} .stat .l{font-size:13px;color:var(--muted);text-transform:uppercase}
 .pill{display:inline-block;padding:3px 10px;border-radius:99px;font-size:13px;font-weight:600}
 .pill.bench{background:#e7f0ff;color:var(--blue)} .pill.bypass{background:#fff6da;color:#b07d12} .pill.warn{background:#fdecec;color:#c0392b}
+.pill.pallet{background:#e6f7ec;color:#1d7a44} .pill.unclassified{background:#efeaf7;color:#6b3fa0}
 .crumb{font-size:14px;color:var(--muted);margin-bottom:14px}
 .crumb a{color:var(--blue);text-decoration:none}

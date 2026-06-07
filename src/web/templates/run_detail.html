@@ -12,8 +12,11 @@
   <table class="tbl">
     <tr><th>Wave</th><th>Stream</th><th>Run group</th><th>Orders</th><th>Lines</th>
         <th>Cartons</th><th>Walk</th><th>Files</th></tr>
+    {% set stream_pills = {
+        "1_pallet_pick": "pallet", "2_wave_bypass": "bypass",
+        "3_wave_bench": "bench", "0_unclassified": "unclassified"} %}
     {% for w in run.waves %}
-    {% set kind = "bench" if "bench" in w.stream else "bypass" %}
+    {% set kind = stream_pills.get(w.stream, w.stream) %}
     <tr>
       <td><a href="/runs/{{ run.run_id }}/waves/{{ w.wave_id }}">{{ w.wave_id }}</a></td>
       <td><span class="pill {{ kind }}">{{ kind }}</span></td>
@@ -37,6 +40,15 @@
     <tr><td>{{ s.so_ref }}</td><td>{{ s.reason }}</td><td>{{ s.missing_skus }}</td></tr>
     {% endfor %}
   </table>
+</section>
+{% endif %}
+{% if run.skus_to_measure %}
+<section class="card">
+  <h4><span class="pill unclassified">{{ run.skus_to_measure|length }}</span> SKUs to measure</h4>
+  <p class="muted"><small>On today's orders but with no captured carton dims — their
+    orders could not be cube-classified and rode the pallet sheets. Capture dims to
+    let them classify normally.</small></p>
+  <p>{% for sku in run.skus_to_measure %}<code>{{ sku }}</code>{% if not loop.last %} · {% endif %}{% endfor %}</p>
 </section>
 {% endif %}
 {% endblock %}

@@ -1,24 +1,25 @@
 # AUDIT — gocold-wms-flow
 
-**Audited:** 2026-06-03 · **Git SHA:** `e95a6c5` · **Source of truth:** `CLAUDE.md`
-**Scope note:** The first `/audit-project` sweep targeted `/home/pop_os/archive/gocold` — a **stale,
-parallel legacy folder** (old barcode-assignment + pdf→CC email tooling). The operator redirected to
-the **real project** here (`archive/rolodex/gocold-wms-flow`) via `dims.ods`. This report is scoped
-to the real project; legacy findings are retained as the **L-appendix**.
+**Audited:** 2026-06-07 · **Git SHA:** `94dd795` · **Branch:** `feature/wave-soh-source-of-truth`
+**Source of truth:** `CLAUDE.md` (root) + `dim-capture-app/MODULES.md` (sub-project registry)
+**Supersedes:** the 2026-06-03 audit (`e95a6c5`), whose blockers are now largely resolved — see "Resolved since last audit".
 
 ---
 
 ## Verdict
 
-The **wave pick generator is genuinely built, complete, and has produced real operator-ready output**,
-and it correctly honours the project's hard non-negotiable: **CartonCloud is read-only**. The
-historical "primary blocker" — *0/460 SKUs have carton dimensions* — is **effectively resolved**:
-**~409 SKUs now have full outer dimensions captured locally** (L/W/H 100%, inner-pack-qty 99.5%,
-weight 69%). The one genuine remaining build is **getting those dims into CartonCloud**, which the
-`dim-capture-app` sub-project is meant to do — and that is only **~1/8 built** (scaffold only).
+**The floor-facing tooling in this repo is genuinely built, committed, and green.** The wave-pick
+generator + console and the dispatch run-prediction + console are real, stub-free, and covered by a
+**fully passing 129-test suite**. CartonCloud stays read-only as the non-negotiable demands, and that
+guard now has a regression test. Nothing in *this* repo is blocking shipment of the wave/dispatch
+workflow.
 
-The single most important *risk* is not technical debt — it's that **the entire working wave
-generator is uncommitted to git**. A reset would erase production-ready work.
+**The one path that is built but NOT live is dims→CartonCloud sync**, which lives in the
+`dim-capture-app/` sub-project. All 8 core modules there are built and passed compile-stress, but it
+has **not passed `/deploy-local`** (`local_validated: false`) and carries **3 security-hardening
+modules that gate the production candidate** — most importantly an **unauthenticated `POST /api/sync/cc`
+that writes to the real CartonCloud**, which directly conflicts with the CLAUDE.md "human approval
+gate" rule. That is the single most important thing standing between "built" and "in production".
 
 ---
 
@@ -26,90 +27,99 @@ generator is uncommitted to git**. A reset would erase production-ready work.
 
 | Capability | Verified how |
 |---|---|
-| **Wave pick generator** — `src/analysis/wave_picks.py`, `scripts/generate_waves.py`, `src/output/pdf_picksheet.py`, `csv_picksheet.py` | Read in full — no stubs/TODO/NotImplemented. Produced **4 real waves** on 2026-05-17 (`data/processed/waves/20260517_103152/`): 60 pick lines / 143 cartons / 6 orders / 0 skipped. Each wave = themed PDF + `*_picks.csv` (one row per SKU, qty summed across orders, sorted by aisle walk order) + paste-ready `*_orders.csv`. |
-| **Read-only enforcement** (the non-negotiable) | `cc_client/client.py:139` gates every non-GET behind `write_enabled` (default `False`). Only POST path is `post_search` (read-via-POST). Zero `.put/.patch/.delete`. `generate_waves.py` never enables writes. SAP-B1 collision risk respected. |
-| **Status filter** | `AWAITING_PICK_AND_PACK`, verified live 2026-05-17 (`wave_picks.py:48`, `queries.py:89`). Optional `--status` override. |
-| **CC API client** | Real OAuth2, paginated POST-search, retry/backoff, customer-scoped to The Forage Company. |
-| **Carton dims** | `data/dims/dims_2026-05-13.xlsx`: ~409/409 full L/W/H (jumped 27%→100% on 12 May). Loaded locally by `dim_loader.py` for slotting — **no CC write**. |
+| **Full Python test suite** | `129 passed` via `.venv/bin/python -m pytest -q` (2026-06-07). |
+| **Stub-free codebase** | Sweep for `not implemented`/`TODO`/`FIXME`/stub classes across `src/` + `scripts/` returns only **intentional guards**: `client.py:256` (forces `post_search`), `sinks.py:56` (v1 write-back deliberately refuses). No console/none/mock stubs in non-test code. |
+| **Read-only enforcement (non-negotiable)** | `cc_client/client.py` gates non-GET behind `write_enabled` (default off); now locked by `tests/test_read_only_guard.py`. |
+| **Wave pick generator — live SOH as source of truth** | `src/analysis/wave_picks.py`, `src/wave_runner.py`, `scripts/generate_waves.py`. Latest work (this branch) makes live SOH the **sole, mandatory** placement source per gen, with per-line UNALLOCATED handling instead of whole-order skips. Covered by `test_wave_runner`, `test_wave_consolidation`, `test_soh_sku_locations`. |
+| **Pick sheets (PDF + CSV)** | `src/output/pdf_picksheet.py`, `csv_picksheet.py` — themed PDF, walk-ordered picks.csv with UNALLOCATED block. `test_pdf_picksheet`, `test_csv_picksheet`. |
+| **Wave-pick console** | `src/web/` (FastAPI + HTMX + SSE). `test_web`, `test_jobs`. Deployed at picks.rolodex-ai.com via `wms-picks` tunnel. |
+| **Dispatch v1 (predict-to-run, read-only)** | `src/dispatch/` — habitual address→run learning, prediction, carrier split, review files. 8 dispatch test files all green. |
+| **Dispatch console** | `src/web_dispatch/` (FastAPI + HTMX + SSE). `test_web_dispatch`, `test_dispatch_plans`. Published at runs.rolodex-ai.com. |
+| **CC API client** | OAuth2 client-credentials, paginated POST-search, retry/backoff, customer-scoped to The Forage Company; SOH report-run + `get_sku_locations` aggregation. |
+| **Carton dims (local)** | `data/dims/dims_2026-05-13.xlsx`, 412 rows; loaded by `dim_loader.py`. |
 
 ---
 
-## Findings
+## Resolved since the 2026-06-03 audit
 
-### R1 — GAP (build): Dims→CartonCloud sync does not exist
-~409 SKUs have dims **locally** but **0 in CartonCloud**. CC-native wave/cartonisation needs them in
-CC. The path is `dim-capture-app` module **02 (cc-client, PATCH /products)** + **04 (dim-api/sync)** —
-both `🔲 not started`; routes return `501` (`dim-capture-app/backend/src/routes/sync.ts:5`,
-`dims.ts:5`). **This is the real path-to-production gap.** → build `dim-capture-app` 01→02→04.
+- **R4 (uncommitted wave generator) — RESOLVED.** Repo went from 2 commits to **55**; wave generator,
+  output, locations, analysis all tracked.
+- **R5 (no tests) — RESOLVED.** `tests/` empty → **129 passing tests**, including the read-only guard
+  and wave-consolidation regressions the prior audit asked for.
+- **R2 (CLAUDE.md dims drift) — RESOLVED.** CLAUDE.md now correctly frames dims as "captured locally,
+  0 synced to CC — a *sync* problem, not a *capture* problem".
+- **R3 (dim-capture module-01 icon overstated) — RESOLVED.** `dim-capture-app/MODULES.md` now shows
+  **all 8 core modules ✅** with current STATE.md + smoke-green evidence (2026-06-03/04).
+- **R1 (dims→CC sync doesn't exist) — RESOLVED AT BUILD LEVEL.** Modules 02 (`cc-client` PATCH) and 04
+  (`dim-api`/syncService) are built and tested; no longer 501 stubs. Now a *deploy/security* gap, not a
+  *build* gap — see B1 below.
 
-### R2 — DRIFT: CLAUDE.md dims line is stale
-`CLAUDE.md:76` still says *"0 / 460 SKUs have carton dimensions in CC — primary blocker"* (10 May).
-Dims were captured 12 May. Update to: *"~409 SKUs have outer dims captured **locally** (L/W/H 100%,
-inner-pack-qty 99.5%, weight 69%); **0 synced to CC** — sync awaits dim-capture-app 02+04."*
+---
 
-### R3 — DRIFT: dim-capture-app module-01 icon overstates reality
-`dim-capture-app/MODULES.md` marks `01 backend-core` **🟨 in-progress**, but
-`modules/backend-core/STATE.md` says *"Not started"* and the code is **scaffold-only** — every route
-returns `501`, no Prisma migration, no `.env`, vitest present but no implementations. Reconcile the
-icon (→ 🔲, or 🟨 with an honest "scaffold only" note).
+## Blockers to the stated goal (dims→CC path going live)
 
-### R4 — GATE: the working wave generator is uncommitted
-Repo has **2 commits**; **27 untracked paths**. `wave_picks.py`, `generate_waves.py`, `src/output/`,
-`src/locations/`, most of `src/analysis/`, and all of `data/` are untracked. **First action should be
-to commit/checkpoint** before any further change risks losing it.
+### B1 — BLOCKER: `dim-capture-app` sync writes to real CC unauthenticated
+`dim-capture-app/MODULES.md` module **12 `cc-write-authz` (🔲🚧)**: `POST /api/sync/cc` (and
+`/api/admin/seed`) are unauthenticated with no confirmation step; in prod `sync/cc` PATCHes the **real**
+CartonCloud. Directly conflicts with CLAUDE.md §"never push to CC automatically … human approval gate".
+Needs an auth-model **decision** (shared secret / nginx basic-auth / explicit confirm) written to
+`DECISIONS.md` before build. **Gate: deploy-prod. This is the top blocker.**
 
-### R5 — GAP: no tests; the read-only guard is unguarded by regression
-`tests/` is empty. The `write_enabled` gate and the wave-consolidation logic are validated only by
-real-data runs. The read-only guard is the project's **non-negotiable** — it most deserves a test
-(a "non-GET without write_enabled must raise" unit test + a wave-consolidation assertion).
+### B2 — GATE: `dim-capture-app` has never passed `/deploy-local`
+`dim-capture-app/.deploy-state` → `local_validated: false`, `validated_at: null`. Compile-stress ran
+(2026-06-04, 1 Critical resolved) but the local deploy gate has not. `/deploy-prod` stays locked until
+it does. **Gate: deploy-local.**
 
-### R6 — GAP: dim weight capture incomplete
-Outer weight 281/409 (69%); inner-pack-qty 407/409 (99.5%, 2 blank); L/W/H 100%. Minor — finish
-weight capture for weight-based cartonisation/dispatch logic.
+### B3 — GATE: three security-hardening modules gate the production candidate
+`dim-capture-app` modules **09 `backend-error-hardening` 🔲🚧** (stack-trace/DSN leakage), **11
+`deploy-hardening` 🔲🚧** (backend published to LAN bypassing single-origin proxy; missing security
+headers), **12 `cc-write-authz` 🔲🚧** (B1). All marked 🚧 = "security must land before prod" per Jake's
+sign-off. Modules 10 (`cc-resilience`) and 13 (`write-concurrency`) are recommended but not gating.
+Each still needs `/add-module` to scaffold before `/build-module`.
 
 ---
 
 ## Gate readiness
-- **gocold-wms-flow (wave pipeline):** scripts + notebooks repo, **no module registry at root** →
-  `/compile-stress` and `/deploy-local` do not apply. Validation is real-data runs (which pass).
-- **dim-capture-app:** framework-managed. `.deploy-state` `local_validated:false`, ~1/8 modules
-  scaffolded → **`/deploy-local` not started / blocked.**
+
+- **gocold-wms-flow (this repo):** scripts + notebooks + FastAPI consoles, **no root MODULES.md** →
+  the framework's `/compile-stress` and `/deploy-local` gates do not formally apply. Validation is
+  **pytest (129 green) + real-data runs**, both passing. The consoles are already tunnel-deployed.
+- **dim-capture-app:** `/compile-stress` **passed** (2026-06-04). `/deploy-local` **not run**
+  (`local_validated:false`) → **`/deploy-prod` blocked**, and gated behind hardening modules 09/11/12.
 
 ---
 
 ## Non-code decisions for Jake
-1. Confirm `AWAITING_PICK_AND_PACK` is the **only** pick-eligible status (no draft/hold variants to include).
-2. Are the legacy `archive/gocold` barcode sheets the ones **loaded into CC**? That decides whether
-   the L1 duplicate-barcodes are a live mis-pick risk at the bench.
-3. Is `dim-capture-app` still the intended dims→CC mechanism — or sync dims another way (a one-off
-   scripted `PATCH` behind the `write_enabled` flag, with human approval)?
+
+1. **CC-write auth model (B1):** how does `POST /api/sync/cc` get protected before it can touch the
+   real CC? (shared secret / basic-auth / explicit human-confirm). Write to `dim-capture-app/DECISIONS.md`.
+2. **Carton weight capture** is incomplete (~69% per CLAUDE.md). Per memory, the missing weights exist
+   nowhere digital — they need **physical weighing**, not estimation. Decide if/when that happens; it's
+   only needed for weight-based cartonisation/dispatch logic, not current picks.
+3. **`gocold-stocktake` sibling project** (`CLAUDE_CODE_GOAL_stocktake.md`, 2026-06-03): a *separate,
+   not-yet-started* app to recount the reshuffled warehouse so CC location data can be trusted. No code
+   exists yet. It is the upstream unblock for the wave generator using CC-native locations. Decide
+   priority vs. the dims→CC sync go-live.
+
+---
+
+## Drift
+
+- No remaining CLAUDE.md drift in this repo (R2/R3 resolved). CLAUDE.md "Open work" section still frames
+  dim-sync modules 02/04 as "not yet built" (line ~155) — **stale**: they are built and tested; the
+  real remaining work is deploy-local + security hardening. Minor; update when convenient.
 
 ---
 
 ## Proposed queue (ordered)
-1. **Commit the wave generator** (R4) — checkpoint working, uncommitted code first.
-2. **Kill the drift** — update CLAUDE.md dims line (R2) + reconcile dim-capture-app icons (R3).
-3. **Build dims→CC sync** — `dim-capture-app` 01→02→04 (R1).
-4. **Add read-only-guard + wave-consolidation tests** (R5) — lock the non-negotiable.
-5. **Finish weight capture** (R6); then optionally settle the legacy folder (L1–L3).
 
----
-
-## Appendix — legacy `archive/gocold` (separate, lower priority)
-An older, parallel effort: pdf→CC inbound API + sales email-CSV + a barcode (EAN13/outer) assignment
-exercise. Flagged only if still in use:
-
-- **L1 (data):** In `FINAL EACH BARCODE.ods`, **5 each-barcodes each map to 2 distinct SKUs**
-  (`15060489730043/0203/0654/0739` = Dash single-can vs doublepack; `19358794000095` = Barbell
-  sea-salt variants) + **34 blank** of 422 — *verified by direct ODS parse*. Real scan mis-pick risk
-  **iff** these were loaded into CC's product master. **The wave generator picks by SKU/location, not
-  barcode, so it is not blocked by this.**
-- **L2 (hygiene):** plaintext Gmail app-password in `pdf_to_cartoncloud_sales/.env:5` — local/untracked
-  (not published). Rotate + `.gitignore` if still used.
-- **L3 (decision):** inbound-API path is real but **dormant** (no `.env`, stale PO since 14 Jan);
-  sales email-CSV path is the one that actually ran (9 Mar). Pick a go-forward path if either is live.
+1. **Decide the CC-write auth model** (B1 / decision 1) — unblocks everything downstream.
+2. **Build dim-capture-app hardening 09 → 11 → 12** (B3) — the prod-gating security set.
+3. **Run `/deploy-local` on dim-capture-app** (B2) — unlock `/deploy-prod`.
+4. **Optionally** build 10 (`cc-resilience`) + 13 (`write-concurrency`) — recommended, not gating.
+5. **Decide stocktake priority** (decision 3) — the other path to a trustworthy CC.
 
 ---
 
 *Read-only audit. Only `AUDIT.md` + `audit.json` were written. No code, data, git, or deploy state
-changed; nothing marked done/✅.*
+changed; nothing marked done/✅ on the basis of prose.*

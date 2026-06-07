@@ -214,6 +214,7 @@ def generate_wave_pick_sheets(
     aisle_walk_order: list[str] | None = None,
     run_group_col: str = "delivery_state",
     early_release_cartons: int | None = None,
+    include_immediate_streams: bool = False,
 ) -> WaveGenerationResult:
     """Build wave pick sheets from a stream classification.
 
@@ -252,6 +253,9 @@ def generate_wave_pick_sheets(
     early_release_cartons :
         Override for ``plan_waves.early_release_cartons``. ``None`` keeps
         the routing-module default.
+    include_immediate_streams :
+        When True, also emit pick-to-pallet (stream 1) and unclassified
+        (stream 0) sheets, one per (run, stream); default False.
     """
     result = WaveGenerationResult()
 
@@ -283,6 +287,7 @@ def generate_wave_pick_sheets(
     plan_kwargs: dict = {"run_group_col": run_group_col}
     if early_release_cartons is not None:
         plan_kwargs["early_release_cartons"] = early_release_cartons
+    plan_kwargs["include_immediate_streams"] = include_immediate_streams
     wave_plan = plan_waves(classification, **plan_kwargs)
 
     if wave_plan.per_wave.empty:

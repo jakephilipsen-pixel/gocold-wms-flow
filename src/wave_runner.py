@@ -27,12 +27,15 @@ from analysis import (
     DEFAULT_LINES_PER_HOUR,
     DEFAULT_PALLET_FRACTION_THRESHOLD,
     apply_tags,
+    attach_dispatch_runs,
     classify_streams,
     compute_order_metrics,
     compute_velocity,
+    find_latest_dispatch_plan,
     generate_wave_pick_sheets,
     load_consignee_rules,
     load_dimensions,
+    load_dispatch_link,
     load_latest,
     run_full_pallet_analysis,
 )
@@ -61,7 +64,7 @@ class WaveRunSettings:
     customer_name: str | None = None
     pallet_fraction_threshold: float = DEFAULT_PALLET_FRACTION_THRESHOLD
     early_release_cartons: int = DEFAULT_EARLY_RELEASE_CARTONS
-    run_group_col: str = "delivery_state"
+    run_group_col: str = "predicted_run"
     lines_per_hour: int = DEFAULT_LINES_PER_HOUR
     pallet_ratio: float = DEFAULT_FULL_PALLET_RATIO
     # Optional explicit paths; None = resolve from repo_root at run time.
@@ -70,6 +73,8 @@ class WaveRunSettings:
     rules_path: Path | None = None
     logo_path: Path | None = None
     out_dir: Path | None = None
+    dispatch_plan_dir: Path | None = None
+    include_pallet_sheets: bool = True
 
 
 @dataclass
@@ -253,6 +258,7 @@ def _build_index_md(
     sheets: list,
     skipped: pd.DataFrame,
     cfg: dict,
+    skus_to_measure: list[str] | None = None,
 ) -> None:
     """Top-level index.md summarising every wave in this run."""
     lines = [
@@ -304,17 +310,39 @@ def _build_index_md(
                 f"{r.missing_skus} |"
             )
 
+    if skus_to_measure:
+        lines.extend([
+            "",
+            f"## {len(skus_to_measure)} SKUs to measure",
+            "",
+            "These SKUs appear on today's orders but have no captured carton "
+            "dims, so their orders could not be cube-classified and rode the "
+            "pallet sheets. Capture dims to let them classify normally.",
+            "",
+            "| SKU |",
+            "|---|",
+            *[f"| `{sku}` |" for sku in skus_to_measure],
+        ])
+
     (out_dir / "index.md").write_text("\n".join(lines))
 
 
-def _settings_dict(settings, audit_path):
-    """Flatten the settings used for a run into a JSON-serialisable dict."""
+def _settings_dict(settings, audit_path, resolved_plan_dir=None):
+    """Flatten the settings used for a run into a JSON-serialisable dict.
+
+    ``resolved_plan_dir`` is the dispatch plan actually consumed (which may have
+    been auto-discovered when ``settings.dispatch_plan_dir`` was None); recording
+    it keeps the audit trail honest about which run-prediction fed the wave.
+    """
+    plan_dir = resolved_plan_dir or settings.dispatch_plan_dir
     return {
         "status": settings.status,
         "customer_name": settings.customer_name,
         "pallet_fraction_threshold": settings.pallet_fraction_threshold,
         "early_release_cartons": settings.early_release_cartons,
         "run_group_col": settings.run_group_col,
+        "dispatch_plan_dir": str(plan_dir) if plan_dir else None,
+        "include_pallet_sheets": settings.include_pallet_sheets,
         "lines_per_hour": settings.lines_per_hour,
         "placement_source": "live_soh",
         "audit_parquet": str(audit_path),
@@ -393,6 +421,24 @@ def run_wave_generation(
         full_pallet = run_full_pallet_analysis(
             snap, dims, raw_vel.sku_metrics, ratio=settings.pallet_ratio)
         metrics = compute_order_metrics(snap, dims, full_pallet)
+
+        # 4b. link dispatch-predicted runs onto the per-order frame so we can
+        # group by run and route flagged orders to the pallet stream.
+        plan_dir = settings.dispatch_plan_dir or find_latest_dispatch_plan(
+            repo_root)
+        if plan_dir is not None and plan_dir.exists():
+            link = load_dispatch_link(plan_dir)
+            metrics.per_order = attach_dispatch_runs(metrics.per_order, link)
+            emit("route", f"linked runs from dispatch plan {plan_dir.name} "
+                          f"({len(link)} mapped orders)", level="ok")
+        elif settings.run_group_col == "predicted_run":
+            raise CartonCloudError(
+                "no dispatch plan found (run build_dispatch first) — refusing "
+                "to wave by predicted_run without run grouping")
+        else:
+            # delivery_state grouping without a plan: no flags available.
+            metrics.per_order["dispatch_flag"] = "no_plan"
+
         emit("route", f"{metrics.n_orders:,} orders "
                       f"({metrics.n_orders_with_dims} full dim coverage)", level="ok")
 
@@ -431,7 +477,8 @@ def run_wave_generation(
             classification=classification, so_lines=snap.so_lines,
             sku_locations=sku_locations,
             run_group_col=settings.run_group_col,
-            early_release_cartons=settings.early_release_cartons)
+            early_release_cartons=settings.early_release_cartons,
+            include_immediate_streams=settings.include_pallet_sheets)
         emit("generate",
              f"{result.summary['n_waves']} waves, "
              f"{result.summary['n_orders_total']} orders, "
@@ -459,11 +506,18 @@ def run_wave_generation(
             result.skipped_orders.to_csv(out_dir / "skipped_orders.csv", index=False)
 
         # 9. index + manifest
+        measured = set(
+            dims.loc[dims["measurement_complete"] == True, "product_code"]  # noqa: E712
+            .astype(str)
+        )
+        order_skus = set(snap.so_lines["product_code"].dropna().astype(str))
+        skus_to_measure = sorted(order_skus - measured)
         _build_index_md(out_dir, result.sheets, result.skipped_orders,
-                        _settings_dict(settings, audit_path))
+                        _settings_dict(settings, audit_path, plan_dir),
+                        skus_to_measure=skus_to_measure)
         manifest = {
             "generated_at": datetime.now().isoformat(),
-            "settings": _settings_dict(settings, audit_path),
+            "settings": _settings_dict(settings, audit_path, plan_dir),
             "summary": result.summary,
             "waves": [
                 {"wave_id": s.wave_id, "stream": s.stream,
@@ -473,6 +527,7 @@ def run_wave_generation(
                  "n_orders": len(s.orders),
                  "estimated_walk_m": s.estimated_walk_distance_m}
                 for s in result.sheets],
+            "skus_to_measure": skus_to_measure,
         }
         (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
 

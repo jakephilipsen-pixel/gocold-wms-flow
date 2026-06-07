@@ -68,6 +68,9 @@ def main() -> int:
     p.add_argument("--pallet-fraction-threshold", type=float, default=None)
     p.add_argument("--early-release-cartons", type=int, default=None)
     p.add_argument("--run-group-col", type=str, default=None)
+    p.add_argument("--dispatch-plan", type=Path, default=None,
+                   help="dispatch plan dir (data/processed/dispatch/<stamp>/); "
+                        "default = latest")
     p.add_argument("--logo", type=Path,
                    default=repo_root / "assests" / "gocold_logo.png")
     p.add_argument("--lines-per-hour", type=int, default=None)
@@ -83,6 +86,7 @@ def main() -> int:
     if args.early_release_cartons is not None:
         kw["early_release_cartons"] = args.early_release_cartons
     if args.run_group_col is not None: kw["run_group_col"] = args.run_group_col
+    if args.dispatch_plan is not None: kw["dispatch_plan_dir"] = args.dispatch_plan
     if args.lines_per_hour is not None: kw["lines_per_hour"] = args.lines_per_hour
     kw["pallet_ratio"] = args.pallet_ratio
     kw["raw_dir"] = args.raw

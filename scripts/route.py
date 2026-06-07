@@ -103,7 +103,8 @@ def main() -> int:
         default=DEFAULT_PALLET_FRACTION_THRESHOLD,
         help=(
             "order-level pallet_fraction at or above which an order is "
-            "classified as Stream 1 (pick-to-pallet). Default 0.70."
+            "classified as Stream 1 (pick-to-pallet). Default 0.51 "
+            "(calibrated from real order history)."
         ),
     )
     p.add_argument(
