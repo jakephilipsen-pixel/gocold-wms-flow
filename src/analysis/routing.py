@@ -704,19 +704,22 @@ def plan_waves(
     cutoff: dt_time = DEFAULT_WAVE_CUTOFF,
     early_release_cartons: int = DEFAULT_EARLY_RELEASE_CARTONS,
     run_group_col: str = "delivery_state",
+    include_immediate_streams: bool = False,
 ) -> WavePlan:
-    """Group wave-eligible orders (streams 2 + 3) into release waves.
+    """Group wave-eligible orders into release waves.
 
-    Grouping key: (received_date, run_group, stream). Within each group,
-    orders accumulate FIFO by ts_packed; a wave releases when accumulated
-    cartons crosses early_release_cartons. Any leftover orders at end of
-    day form a final wave released at `cutoff`.
+    Streams 2 + 3 (bypass / bench) accumulate FIFO by ts_packed within each
+    (received_date, run_group, stream) group; a wave releases when accumulated
+    cartons cross early_release_cartons, and leftovers form a final cutoff wave.
 
-    run_group_col defaults to delivery_state - good enough proxy for delivery
-    run until you upload an explicit run map. Easy to swap by passing a
-    different column name.
+    When ``include_immediate_streams`` is True, streams 1 (pallet) + 0
+    (unclassified) also emit ONE wave per (received_date, run_group, stream)
+    with no accumulation (``release_reason="immediate"``) so the sheet
+    generator produces pick-to-pallet paperwork for them. When False (default),
+    they are excluded - preserving the historical streams-2/3-only behaviour.
 
-    Stream 1 orders are excluded - they go to the floor immediately, no wave.
+    run_group_col defaults to delivery_state; pass "predicted_run" to group by
+    the dispatch-predicted delivery run.
     """
     df = classification.per_order
     if df.empty:
@@ -727,84 +730,100 @@ def plan_waves(
             early_release_cartons=early_release_cartons,
         )
 
-    wave_eligible = df[df["stream"].isin([STREAM_BYPASS, STREAM_BENCH])].copy()
-    if wave_eligible.empty:
-        log.info("no orders in wave-eligible streams (2/3)")
-        return WavePlan(
-            per_wave=pd.DataFrame(),
-            per_order_assignment=pd.DataFrame(),
-            cutoff_used=cutoff,
-            early_release_cartons=early_release_cartons,
-        )
+    work = df.copy()
 
-    # received_date for grouping - we use ts_packed as proxy (the timestamp
-    # we have). In reality you might want received_at or due_date here.
-    ts = pd.to_datetime(
-        wave_eligible["ts_packed"], errors="coerce", utc=True,
-    )
-    # localise to Melbourne time for cutoff comparison
+    # received_date for grouping - use ts_packed (the timestamp we have),
+    # localised to Melbourne for the cutoff comparison.
+    ts = pd.to_datetime(work["ts_packed"], errors="coerce", utc=True)
     try:
         ts_local = ts.dt.tz_convert("Australia/Melbourne")
     except (TypeError, AttributeError):
         ts_local = ts
-    wave_eligible["receive_date"] = ts_local.dt.date
+    work["receive_date"] = ts_local.dt.date
 
-    if run_group_col not in wave_eligible.columns:
+    if run_group_col not in work.columns:
         log.warning(
             "run_group_col %r not in per_order; falling back to delivery_state",
             run_group_col,
         )
         run_group_col = "delivery_state"
 
-    wave_eligible = wave_eligible.sort_values(
-        ["receive_date", run_group_col, "stream", "ts_packed"]
-    ).reset_index(drop=True)
-
     waves_per_order_rows: list[dict] = []
     waves_summary_rows: list[dict] = []
-
     group_keys = ["receive_date", run_group_col, "stream"]
-    for keys, group in wave_eligible.groupby(group_keys, sort=False, dropna=False):
-        receive_date, run_group, stream = keys
-        accumulated = 0.0
-        wave_idx = 1
-        wave_orders: list[dict] = []
 
-        for row in group.itertuples(index=False):
-            wave_orders.append({
-                "so_id": row.so_id,
-                "cartons": float(row.total_cartons),
-                "ts_packed": row.ts_packed,
-            })
-            accumulated += float(row.total_cartons)
-
-            if accumulated >= early_release_cartons:
-                wave_id = _make_wave_id(receive_date, run_group, stream, wave_idx)
+    # --- streams 2 + 3: accumulate with early-release + cutoff ---
+    eligible = work[work["stream"].isin([STREAM_BYPASS, STREAM_BENCH])].copy()
+    if not eligible.empty:
+        eligible = eligible.sort_values(
+            ["receive_date", run_group_col, "stream", "ts_packed"]
+        ).reset_index(drop=True)
+        for keys, group in eligible.groupby(group_keys, sort=False, dropna=False):
+            receive_date, run_group, stream = keys
+            accumulated = 0.0
+            wave_idx = 1
+            wave_orders: list[dict] = []
+            for row in group.itertuples(index=False):
+                wave_orders.append({
+                    "so_id": row.so_id,
+                    "cartons": float(row.total_cartons),
+                    "ts_packed": row.ts_packed,
+                })
+                accumulated += float(row.total_cartons)
+                if accumulated >= early_release_cartons:
+                    wave_id = _make_wave_id(
+                        receive_date, run_group, stream, wave_idx)
+                    _emit_wave(
+                        wave_id, receive_date, run_group, stream, wave_idx,
+                        wave_orders, "early_release",
+                        waves_per_order_rows, waves_summary_rows,
+                    )
+                    wave_orders = []
+                    accumulated = 0.0
+                    wave_idx += 1
+            if wave_orders:
+                wave_id = _make_wave_id(
+                    receive_date, run_group, stream, wave_idx)
                 _emit_wave(
                     wave_id, receive_date, run_group, stream, wave_idx,
-                    wave_orders, "early_release",
+                    wave_orders, "cutoff_release",
                     waves_per_order_rows, waves_summary_rows,
                 )
-                wave_orders = []
-                accumulated = 0.0
-                wave_idx += 1
 
-        # leftover orders -> cutoff release
-        if wave_orders:
-            wave_id = _make_wave_id(receive_date, run_group, stream, wave_idx)
-            _emit_wave(
-                wave_id, receive_date, run_group, stream, wave_idx,
-                wave_orders, "cutoff_release",
-                waves_per_order_rows, waves_summary_rows,
-            )
+    # --- streams 1 + 0: one immediate wave per (date, run, stream) ---
+    if include_immediate_streams:
+        immediate = work[
+            work["stream"].isin([STREAM_PALLET, STREAM_UNCLASSIFIED])
+        ].copy()
+        if not immediate.empty:
+            immediate = immediate.sort_values(
+                ["receive_date", run_group_col, "stream", "ts_packed"]
+            ).reset_index(drop=True)
+            for keys, group in immediate.groupby(
+                group_keys, sort=False, dropna=False
+            ):
+                receive_date, run_group, stream = keys
+                wave_orders = [{
+                    "so_id": row.so_id,
+                    "cartons": float(row.total_cartons),
+                    "ts_packed": row.ts_packed,
+                } for row in group.itertuples(index=False)]
+                wave_id = _make_wave_id(receive_date, run_group, stream, 1)
+                _emit_wave(
+                    wave_id, receive_date, run_group, stream, 1,
+                    wave_orders, "immediate",
+                    waves_per_order_rows, waves_summary_rows,
+                )
 
     per_order_df = pd.DataFrame(waves_per_order_rows)
     per_wave_df = pd.DataFrame(waves_summary_rows)
 
     log.info(
-        "planned %d waves across %d orders (cutoff=%s, early=%d cartons)",
+        "planned %d waves across %d orders (cutoff=%s, early=%d cartons, "
+        "immediate=%s)",
         len(per_wave_df), len(per_order_df),
         cutoff.strftime("%H:%M"), early_release_cartons,
+        include_immediate_streams,
     )
 
     return WavePlan(
