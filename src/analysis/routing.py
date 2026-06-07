@@ -435,6 +435,8 @@ def classify_streams(
       R1. Consignee override_stream is set            -> use that
       R2. Consignee min_cartons override is set
           AND order.total_cartons >= min_cartons      -> STREAM_PALLET
+      R2b. dispatch_flag in FLAGGED_DISPATCH (run
+          untrustworthy / order absent from plan)     -> STREAM_PALLET
       R3. Order has a full_pallet_line flag           -> STREAM_PALLET
       R4. Order pallet_fraction >= threshold          -> STREAM_PALLET
       R5. Order has_unknown_pickbench (any SKU
