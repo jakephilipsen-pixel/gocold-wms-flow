@@ -214,3 +214,43 @@ def test_index_form_defaults_to_predicted_run(client):
     resp = client.get("/")
     assert resp.status_code == 200
     assert "predicted_run" in resp.text
+
+
+def _make_pallet_run(base: Path, run_id: str) -> Path:
+    run = base / run_id
+    wave_id = "2026-06-08_RUN-A_S1_W01"
+    (run / wave_id).mkdir(parents=True)
+    manifest = {
+        "generated_at": "2026-06-08T08:00:00",
+        "settings": {"status": "AWAITING_PICK_AND_PACK", "customer_name": None,
+                     "pallet_fraction_threshold": 0.70, "early_release_cartons": 30,
+                     "run_group_col": "predicted_run", "lines_per_hour": 60},
+        "summary": {"n_waves": 1, "n_orders_total": 3, "n_orders_skipped": 0,
+                    "n_pick_lines_total": 5, "n_lines_unallocated": 0,
+                    "n_skus_unallocated": 0},
+        "waves": [{"wave_id": wave_id, "stream": "1_pallet_pick",
+                   "run_group": "RUN-A", "receive_date": None,
+                   "total_cartons": 150, "total_lines": 5, "n_orders": 3,
+                   "estimated_walk_m": 50.0}],
+        "skus_to_measure": ["FRG-0001", "FRG-0002"],
+    }
+    (run / "manifest.json").write_text(json.dumps(manifest))
+    return run
+
+
+def test_run_detail_labels_pallet_stream_not_bypass(tmp_path, client):
+    base = tmp_path / "data" / "processed" / "waves"
+    _make_pallet_run(base, "20260608_080000")
+    r = client.get("/runs/20260608_080000")
+    assert r.status_code == 200
+    assert "pallet" in r.text       # pallet wave shows a pallet pill
+    assert "bypass" not in r.text   # and is NOT mislabelled as bypass
+
+
+def test_run_detail_surfaces_skus_to_measure(tmp_path, client):
+    base = tmp_path / "data" / "processed" / "waves"
+    _make_pallet_run(base, "20260608_080000")
+    r = client.get("/runs/20260608_080000")
+    assert r.status_code == 200
+    assert "SKUs to measure" in r.text
+    assert "FRG-0001" in r.text and "FRG-0002" in r.text

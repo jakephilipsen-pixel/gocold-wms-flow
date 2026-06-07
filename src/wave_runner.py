@@ -527,6 +527,7 @@ def run_wave_generation(
                  "n_orders": len(s.orders),
                  "estimated_walk_m": s.estimated_walk_distance_m}
                 for s in result.sheets],
+            "skus_to_measure": skus_to_measure,
         }
         (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
 
