@@ -258,6 +258,7 @@ def _build_index_md(
     sheets: list,
     skipped: pd.DataFrame,
     cfg: dict,
+    skus_to_measure: list[str] | None = None,
 ) -> None:
     """Top-level index.md summarising every wave in this run."""
     lines = [
@@ -308,6 +309,20 @@ def _build_index_md(
                 f"| `{r.wave_id}` | {r.so_ref} | {r.reason} | "
                 f"{r.missing_skus} |"
             )
+
+    if skus_to_measure:
+        lines.extend([
+            "",
+            f"## {len(skus_to_measure)} SKUs to measure",
+            "",
+            "These SKUs appear on today's orders but have no captured carton "
+            "dims, so their orders could not be cube-classified and rode the "
+            "pallet sheets. Capture dims to let them classify normally.",
+            "",
+            "| SKU |",
+            "|---|",
+            *[f"| `{sku}` |" for sku in skus_to_measure],
+        ])
 
     (out_dir / "index.md").write_text("\n".join(lines))
 
@@ -491,8 +506,15 @@ def run_wave_generation(
             result.skipped_orders.to_csv(out_dir / "skipped_orders.csv", index=False)
 
         # 9. index + manifest
+        measured = set(
+            dims.loc[dims["measurement_complete"] == True, "product_code"]  # noqa: E712
+            .astype(str)
+        )
+        order_skus = set(snap.so_lines["product_code"].dropna().astype(str))
+        skus_to_measure = sorted(order_skus - measured)
         _build_index_md(out_dir, result.sheets, result.skipped_orders,
-                        _settings_dict(settings, audit_path, plan_dir))
+                        _settings_dict(settings, audit_path, plan_dir),
+                        skus_to_measure=skus_to_measure)
         manifest = {
             "generated_at": datetime.now().isoformat(),
             "settings": _settings_dict(settings, audit_path, plan_dir),

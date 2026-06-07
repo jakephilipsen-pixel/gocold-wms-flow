@@ -238,6 +238,25 @@ def test_run_grouping_requires_a_dispatch_plan(tmp_path, fake_cc):
                for e in events if e.level == "error")
 
 
+def test_index_lists_skus_to_measure(tmp_path, fake_cc):
+    # SOME-SKU is not in the real dims file -> it should appear in the
+    # "SKUs to measure" section of index.md.
+    orders = [_fake_order("SO-1", "SOME-SKU")]
+    fake_cc.setattr(
+        "wave_runner.search_outbound_orders",
+        lambda client, **kw: iter(orders),
+    )
+    plan_dir = tmp_path / "dispatch"
+    _write_dispatch_plan(plan_dir, [("id-SO-1", "RUN-A", "stable")])
+    settings = WaveRunSettings(
+        repo_root=_ROOT, out_dir=tmp_path / "waves",
+        dispatch_plan_dir=plan_dir)
+    result = run_wave_generation(settings, [].append)
+    index = (result.out_dir / "index.md").read_text()
+    assert "SKUs to measure" in index
+    assert "SOME-SKU" in index
+
+
 def test_cli_main_builds_settings_and_runs(tmp_path, monkeypatch):
     """The CLI wrapper delegates to run_wave_generation with parsed flags."""
     import importlib.util
