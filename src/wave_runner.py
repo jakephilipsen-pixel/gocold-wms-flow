@@ -312,16 +312,21 @@ def _build_index_md(
     (out_dir / "index.md").write_text("\n".join(lines))
 
 
-def _settings_dict(settings, audit_path):
-    """Flatten the settings used for a run into a JSON-serialisable dict."""
+def _settings_dict(settings, audit_path, resolved_plan_dir=None):
+    """Flatten the settings used for a run into a JSON-serialisable dict.
+
+    ``resolved_plan_dir`` is the dispatch plan actually consumed (which may have
+    been auto-discovered when ``settings.dispatch_plan_dir`` was None); recording
+    it keeps the audit trail honest about which run-prediction fed the wave.
+    """
+    plan_dir = resolved_plan_dir or settings.dispatch_plan_dir
     return {
         "status": settings.status,
         "customer_name": settings.customer_name,
         "pallet_fraction_threshold": settings.pallet_fraction_threshold,
         "early_release_cartons": settings.early_release_cartons,
         "run_group_col": settings.run_group_col,
-        "dispatch_plan_dir": str(settings.dispatch_plan_dir)
-        if settings.dispatch_plan_dir else None,
+        "dispatch_plan_dir": str(plan_dir) if plan_dir else None,
         "include_pallet_sheets": settings.include_pallet_sheets,
         "lines_per_hour": settings.lines_per_hour,
         "placement_source": "live_soh",
@@ -487,10 +492,10 @@ def run_wave_generation(
 
         # 9. index + manifest
         _build_index_md(out_dir, result.sheets, result.skipped_orders,
-                        _settings_dict(settings, audit_path))
+                        _settings_dict(settings, audit_path, plan_dir))
         manifest = {
             "generated_at": datetime.now().isoformat(),
-            "settings": _settings_dict(settings, audit_path),
+            "settings": _settings_dict(settings, audit_path, plan_dir),
             "summary": result.summary,
             "waves": [
                 {"wave_id": s.wave_id, "stream": s.stream,
