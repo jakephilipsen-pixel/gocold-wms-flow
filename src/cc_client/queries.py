@@ -67,12 +67,18 @@ def search_outbound_orders(
     packed_from: date | datetime | str | None = None,
     packed_to: date | datetime | str | None = None,
     customer_name: str | None = None,
+    status: list[str] | None = None,
     page_size: int = 100,
     max_pages: int | None = None,
 ) -> Iterator[dict[str, Any]]:
-    """Iterate sale orders, optionally filtered by pack date range and customer.
+    """Iterate sale orders, optionally filtered by pack date, customer, or status.
 
     Returns full order objects including items[] with measures.quantity per line.
+
+    ``status`` is a list of CC status codes (e.g. ``["AWAITING_PICK_AND_PACK"]``).
+    Multiple values are OR-ed together. Use this to pull open orders that
+    haven't been packed yet — those have no packed timestamp so the date
+    filter wouldn't catch them.
     """
     conds: list[dict] = []
     conds.extend(_date_range_condition(
@@ -80,11 +86,30 @@ def search_outbound_orders(
     ))
     if customer_name:
         conds.append(_and_text("customerName", customer_name, "EQUAL_TO"))
+    if status:
+        # CC rejects "status" as a ValueField but accepts /status as a
+        # JsonField pointer (verified live, 2026-05-17).
+        status_conds = [
+            {
+                "type": "TextComparisonCondition",
+                "field": {"type": "JsonField", "pointer": "/status"},
+                "value": {"type": "ValueField", "value": s},
+                "method": "EQUAL_TO",
+            }
+            for s in status
+        ]
+        if len(status_conds) == 1:
+            conds.append(status_conds[0])
+        else:
+            conds.append({
+                "type": "OrCondition",
+                "conditions": status_conds,
+            })
 
     if not conds:
         # safety: CC search may reject empty conditions; force at least one
         raise ValueError(
-            "must supply at least one filter (date range or customer)"
+            "must supply at least one filter (date range, customer, or status)"
         )
 
     body = {"condition": {"type": "AndCondition", "conditions": conds}}
@@ -264,3 +289,180 @@ def get_stock_on_hand(
             break
         page += 1
     return items
+
+
+def get_sku_locations(
+    client: CartonCloudClient,
+    *,
+    customer_id: str,
+    product_codes: list[str] | None = None,
+    poll_interval: float = 10.0,
+    max_wait: float = 300.0,
+) -> list[dict[str, Any]]:
+    """Resolve current SKU -> location bindings via CC stock-on-hand.
+
+    Returns a list of ``{product_code, location_name, location_id, qty, uom}``
+    dicts — one row per (product, location, unit-of-measure) bucket that
+    SOH reports stock in. Use this as a fallback when an explicit
+    assignment file isn't available for a SKU.
+
+    ``product_codes`` is an optional filter — if supplied, only rows
+    matching one of those codes are returned. CC's SOH endpoint doesn't
+    support per-SKU filtering at the report level, so we filter
+    client-side after fetching.
+
+    Aggregates by ``location`` + ``productType`` so we get one row per
+    location/product pair. (CC rejects ``warehouseLocation``/``product`` as
+    aggregate dimensions with HTTP 422 — the accepted set is productStatus,
+    productGroup, productType, unitOfMeasure, inboundOrder, batch,
+    receivedWeek, sscc, sapLineNo, expiryDate, location.) Costs one SOH
+    report run; uses the existing ``get_stock_on_hand`` plumbing (which polls
+    until the report is SUCCESS) so it inherits its rate-limit and retry
+    behaviour.
+    """
+    items = get_stock_on_hand(
+        client,
+        customer_id=customer_id,
+        aggregate_by=["location", "productType", "unitOfMeasure"],
+        poll_interval=poll_interval,
+        max_wait=max_wait,
+    )
+
+    wanted = set(product_codes) if product_codes else None
+    out: list[dict[str, Any]] = []
+    for item in items:
+        # SOH item shapes vary across CC versions; pull defensively. The
+        # aggregated shape nests the SKU under details.product and the
+        # location/uom under properties.* (verified live 2026-06-05).
+        props = item.get("properties") or {}
+        product = item.get("details", {}).get("product") or item.get("product") or {}
+        product_code = (product.get("references") or {}).get("code") or product.get(
+            "code"
+        )
+        if not product_code:
+            continue
+        if wanted is not None and product_code not in wanted:
+            continue
+
+        location = (
+            props.get("location")
+            or item.get("warehouseLocation")
+            or item.get("location")
+            or item.get("details", {}).get("warehouseLocation")
+            or {}
+        )
+        location_name = (
+            location.get("name")
+            or (location.get("references") or {}).get("barcode")
+            or location.get("code")
+        )
+        location_id = location.get("id")
+        if not location_name and not location_id:
+            continue
+
+        uom = (
+            props.get("unitOfMeasure")
+            or item.get("unitOfMeasure")
+            or item.get("details", {}).get("unitOfMeasure")
+            or {}
+        )
+        measures = item.get("measures") or item.get("quantity") or {}
+        qty = (
+            measures.get("quantity")
+            if isinstance(measures, dict)
+            else measures
+        )
+
+        out.append({
+            "product_code": product_code,
+            "location_name": location_name,
+            "location_id": location_id,
+            "qty": qty,
+            "uom_name": uom.get("name") or uom.get("type"),
+        })
+    log.info(
+        "get_sku_locations: %d SOH rows mapped to %d unique SKUs across %d locations",
+        len(out),
+        len({r["product_code"] for r in out}),
+        len({r["location_name"] for r in out if r["location_name"]}),
+    )
+    return out
+
+
+def search_warehouse_locations(
+    client: CartonCloudClient,
+    *,
+    warehouse_name: str | None = None,
+    page_size: int = 100,
+    max_pages: int | None = None,
+) -> Iterator[dict[str, Any]]:
+    """Iterate warehouse locations. Returns location objects with bay/level/etc.
+
+    May not be exposed on the public API — if so this raises CartonCloudError
+    and the caller should fall back to the UI XLS export workflow.
+    """
+    conds: list[dict] = []
+    if warehouse_name:
+        conds.append({
+            "type": "TextComparisonCondition",
+            "field": {"type": "JsonField", "pointer": "/warehouse/name"},
+            "value": {"type": "ValueField", "value": warehouse_name},
+            "method": "EQUAL_TO",
+        })
+
+    # CC search requires a non-empty condition tree. If we have no filters,
+    # match all by checking a field that always exists.
+    if not conds:
+        conds.append({
+            "type": "TextComparisonCondition",
+            "field": {"type": "JsonField", "pointer": "/type"},
+            "value": {"type": "ValueField", "value": ""},
+            "method": "NOT_EQUAL_TO",
+        })
+
+    body = {"condition": {"type": "AndCondition", "conditions": conds}}
+    yield from client.post_search(
+        "/warehouse-locations/search",
+        body,
+        page_size=page_size,
+        max_pages=max_pages,
+    )
+
+
+def search_consignments(
+    client: CartonCloudClient,
+    *,
+    run_sheet_date_from: date | datetime | str,
+    page_size: int = 100,
+    max_pages: int | None = None,
+) -> Iterator[dict[str, Any]]:
+    """Iterate consignments whose run sheet is dated on/after a cutoff.
+
+    Consignments are CC's source of truth for "what address went on what
+    run": each carries the delivery address plus ``details.runsheet`` and
+    ``details.deliveryRun``. ``runSheetDate`` is a ValueField search taking
+    an ISO date (YYYY-MM-DD). Read-only despite the POST verb, like the
+    other search helpers.
+    """
+    body = {
+        "condition": {
+            "type": "AndCondition",
+            "conditions": [
+                {
+                    "type": "TextComparisonCondition",
+                    "field": {"type": "ValueField", "value": "runSheetDate"},
+                    "value": {
+                        "type": "ValueField",
+                        "value": _iso(run_sheet_date_from)[:10],
+                    },
+                    "method": "GREATER_THAN_OR_EQUAL_TO",
+                }
+            ],
+        }
+    }
+    yield from client.post_search(
+        "/consignments/search",
+        body,
+        page_size=page_size,
+        max_pages=max_pages,
+    )

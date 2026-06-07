@@ -1,0 +1,50 @@
+{
+  "project": "gocold-wms-flow",
+  "audited_at": "2026-06-07T00:00:00+10:00",
+  "git_sha": "94dd795",
+  "branch": "feature/wave-soh-source-of-truth",
+  "supersedes_audit": "2026-06-03 (e95a6c5)",
+  "source_of_truth": "CLAUDE.md + dim-capture-app/MODULES.md",
+  "definition_of_done": [
+    "CartonCloud read-only until writes explicitly approved (human approval gate)",
+    "Zero-tolerance for floor breakage: validate in shadow before rollout",
+    "Wave pick generation for The Forage Company from live CC data",
+    "Dims captured and synced into CartonCloud (currently local-only)",
+    "Dispatch run prediction (read-only) for dispatchers"
+  ],
+  "test_evidence": ".venv/bin/python -m pytest -q -> 129 passed (2026-06-07)",
+  "modules_claimed": [
+    {"name": "wave-pick generator + console (src/analysis, src/web)", "status": "✅", "verified": true},
+    {"name": "dispatch v1 + console (src/dispatch, src/web_dispatch)", "status": "✅", "verified": true},
+    {"name": "cc_client read-only (src/cc_client)", "status": "✅", "verified": true},
+    {"name": "dim-capture-app 01-08 core", "status": "✅", "verified": true},
+    {"name": "dim-capture-app 09 backend-error-hardening", "status": "🔲", "verified": true},
+    {"name": "dim-capture-app 10 cc-resilience", "status": "🔲", "verified": true},
+    {"name": "dim-capture-app 11 deploy-hardening", "status": "🔲", "verified": true},
+    {"name": "dim-capture-app 12 cc-write-authz", "status": "🔲", "verified": true},
+    {"name": "dim-capture-app 13 write-concurrency", "status": "🔲", "verified": true}
+  ],
+  "findings": [
+    {"id": "B1", "severity": "BLOCKER", "title": "dim-capture-app POST /api/sync/cc writes to real CC unauthenticated", "evidence": "dim-capture-app/MODULES.md module 12 cc-write-authz (planned, gating)", "constraint": "CLAUDE.md: never push to CC automatically / human approval gate", "maps_to_module": "dim-capture-app/12 cc-write-authz", "gate": "deploy-prod", "verified": true},
+    {"id": "B2", "severity": "GATE", "title": "dim-capture-app has not passed /deploy-local", "evidence": "dim-capture-app/.deploy-state -> local_validated:false, validated_at:null", "constraint": "framework no-bypass deploy policy", "maps_to_module": "dim-capture-app deploy-local gate", "gate": "deploy-local", "verified": true},
+    {"id": "B3", "severity": "GATE", "title": "Three security-hardening modules gate the production candidate", "evidence": "dim-capture-app/MODULES.md modules 09/11/12 marked 🔲🚧 (security must land before prod)", "constraint": "Jake sign-off: security before prod", "maps_to_module": "dim-capture-app/09,11,12", "gate": "deploy-prod", "verified": true},
+    {"id": "N1", "severity": "NON_CODE", "title": "CC-write auth model undecided", "evidence": "no DECISIONS.md entry for sync/cc auth", "constraint": "CLAUDE.md human approval gate", "maps_to_module": null, "gate": "none", "verified": true},
+    {"id": "N2", "severity": "NON_CODE", "title": "Carton weight capture ~69%; missing weights exist nowhere digital (need physical weighing)", "evidence": "CLAUDE.md dims line; memory r6-weights-missing-not-digital", "constraint": null, "maps_to_module": null, "gate": "none", "verified": true},
+    {"id": "N3", "severity": "NON_CODE", "title": "gocold-stocktake sibling project not started (upstream unblock for CC-native locations)", "evidence": "CLAUDE_CODE_GOAL_stocktake.md exists; no stocktake code in repo", "constraint": null, "maps_to_module": "separate project ~/rolodex/gocold-stocktake", "gate": "none", "verified": true},
+    {"id": "D1", "severity": "DRIFT", "title": "CLAUDE.md 'Open work' still frames dim-sync modules 02/04 as not-yet-built", "evidence": "CLAUDE.md ~line 155 vs dim-capture-app/MODULES.md (02,04 ✅)", "constraint": null, "maps_to_module": null, "gate": "none", "verified": true}
+  ],
+  "resolved_since_last_audit": [
+    "R4 uncommitted wave generator -> committed (55 commits)",
+    "R5 no tests -> 129 passing tests incl. read-only guard",
+    "R2 CLAUDE.md dims drift -> corrected",
+    "R3 dim-capture module-01 icon overstated -> all 8 core modules ✅",
+    "R1 dims->CC sync missing -> built at module level (now a deploy/security gap, not a build gap)"
+  ],
+  "gate_readiness": {
+    "gocold_wms_flow": "n/a (no root MODULES.md; validated by pytest 129 green + real-data runs)",
+    "dim_capture_compile_stress": "ready (passed 2026-06-04, 1 Critical resolved)",
+    "dim_capture_deploy_local": "blocked (local_validated:false)",
+    "dim_capture_deploy_prod": "blocked (deploy-local not run + hardening 09/11/12 pending)"
+  },
+  "verdict": "Wave + dispatch tooling in this repo is built, committed, and 129-test green with CC read-only enforced. The only built-but-not-live path is dims->CC sync (dim-capture-app), blocked by an unauthenticated real-CC write (B1), an unrun /deploy-local (B2), and prod-gating security hardening (B3)."
+}

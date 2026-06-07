@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="crumb"><a href="/">← Console</a> / Plan {{ plan.stamp }}</div>
+<div class="cards">
+  <div class="stat"><div class="n">{{ plan.runs|sum(attribute='n_stops') }}</div><div class="l">Assigned</div></div>
+  <div class="stat"><div class="n">{{ plan.runs|length }}</div><div class="l">Runs</div></div>
+  <div class="stat"><div class="n">{{ plan.review|length }}</div><div class="l">Review</div></div>
+  <div class="stat"><div class="n">{{ plan.carriers|length }}</div><div class="l">Carriers</div></div>
+</div>
+
+<section class="card mb">
+  <h4>Predicted runs</h4>
+  <table class="tbl">
+    <tr><th>Run</th><th>Stops</th><th>Avg confidence</th><th>Files</th></tr>
+    {% for r in plan.runs %}
+    <tr>
+      <td><a href="/plans/{{ plan.stamp }}/runs/{{ r.run }}">{{ r.run }}</a></td>
+      <td>{{ r.n_stops }}</td>
+      <td>{{ '%.0f' % (r.avg_confidence * 100) }}%</td>
+      <td><a href="/plans/{{ plan.stamp }}/files/run_{{ r.run }}.xlsx">manifest</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="muted">No own-fleet assignments.</td></tr>
+    {% endfor %}
+  </table>
+</section>
+
+{% if plan.review %}
+<section class="card mb">
+  <h4><span class="pill warn">{{ plan.review|length }} review</span> — needs dispatcher attention</h4>
+  <table class="tbl">
+    <tr><th>SO ref</th><th>Flag</th><th>Best guess</th><th>Reason</th>
+        <th>Address</th><th>Alternatives</th></tr>
+    {% for s in plan.review %}
+    <tr>
+      <td>{{ s.so_ref }}</td>
+      <td><span class="pill warn">{{ s.flag }}</span></td>
+      <td>{{ s.predicted_run or '—' }}</td>
+      <td>{{ s.reason }}</td>
+      <td>{{ s.full_address }}</td>
+      <td>{{ s.alternatives }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+{% endif %}
+
+{% if plan.carriers %}
+<section class="card mb">
+  <h4>Carrier orders</h4>
+  {% for name, rows in plan.carriers.items() %}
+  <p><strong>{{ name }}</strong> — {{ rows|length }} orders
+    · <a href="/plans/{{ plan.stamp }}/files/carriers_{{ name }}.csv">CSV</a></p>
+  {% endfor %}
+</section>
+{% endif %}
+
+<section class="card">
+  <h4>Downloads</h4>
+  <p>
+    <a href="/plans/{{ plan.stamp }}/files/suggested_runs.csv">suggested_runs.csv</a> ·
+    <a href="/plans/{{ plan.stamp }}/files/review.csv">review.csv</a> ·
+    <a href="/plans/{{ plan.stamp }}/files/summary.md">summary.md</a>
+  </p>
+</section>
+{% endblock %}

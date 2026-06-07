@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="crumb">
+  <a href="/">← Console</a> /
+  <a href="/plans/{{ run.stamp }}">Plan {{ run.stamp }}</a> /
+  Run {{ run.run }}
+</div>
+<section class="card">
+  <h4>{{ run.run }} — {{ run.stops|length }} stops (postcode order)</h4>
+  <table class="tbl">
+    <tr><th>SO ref</th><th>Address</th><th>Suburb</th><th>Postcode</th>
+        <th>Confidence</th><th>Reason</th></tr>
+    {% for s in run.stops %}
+    <tr>
+      <td>{{ s.so_ref }}</td>
+      <td>{{ s.full_address }}</td>
+      <td>{{ s.suburb }}</td>
+      <td>{{ s.postcode }}</td>
+      <td>{{ s.confidence }}</td>
+      <td>{{ s.reason }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">No stops on this run.</td></tr>
+    {% endfor %}
+  </table>
+</section>
+{% endblock %}

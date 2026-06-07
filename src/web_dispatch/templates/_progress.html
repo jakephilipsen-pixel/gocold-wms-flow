@@ -1,0 +1,6 @@
+<div hx-ext="sse" sse-connect="/build/job/{{ job_id }}/stream" sse-swap="message"
+     hx-target="#log" hx-swap="beforeend">
+  <div id="log" class="log"></div>
+  <div sse-swap="done" hx-swap="beforeend" hx-target="#after"></div>
+  <div id="after"></div>
+</div>

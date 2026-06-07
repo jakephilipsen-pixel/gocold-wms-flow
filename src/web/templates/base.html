@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Go Cold · Wave Pick Console</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js"></script>
+  <script src="/static/sse.js"></script>
+</head>
+<body>
+  <header class="bar">
+    <span class="dot"></span>
+    <strong>Go Cold</strong> · Wave Pick Console
+    <span class="bar-right">Forage · read-only against CartonCloud</span>
+  </header>
+  <main class="wrap">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

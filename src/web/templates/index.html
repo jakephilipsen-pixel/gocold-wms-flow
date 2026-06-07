@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid">
+  <section class="card">
+    <h4>New wave run</h4>
+    <form hx-post="/runs" hx-target="#progress" hx-swap="innerHTML">
+      <label>Status
+        <input class="in" name="status" value="AWAITING_PICK_AND_PACK">
+      </label>
+      <label>Customer (optional)
+        <input class="in" name="customer_name" placeholder="The Forage Company">
+      </label>
+      <label>Pallet fraction threshold
+        <input class="in" name="pallet_fraction_threshold" type="number"
+               step="0.01" value="0.51">
+      </label>
+      <label>Early release cartons
+        <input class="in" name="early_release_cartons" type="number" value="30">
+      </label>
+      <label>Run group
+        <select class="in" name="run_group_col">
+          <option value="predicted_run" selected>predicted_run</option>
+          <option value="delivery_state">delivery_state</option>
+          <option value="delivery_postcode">delivery_postcode</option>
+        </select>
+      </label>
+      <p class="muted"><small>Pick locations are resolved from live CC
+        stock-on-hand on every run. If the SOH pull fails the run will
+        abort — no stale fallback.</small></p>
+      <button class="btn" type="submit">⚡ Generate waves</button>
+    </form>
+  </section>
+  <div>
+    <section class="card mb">
+      <h4>Live progress</h4>
+      <div id="progress"><p class="muted">No run in progress.</p></div>
+    </section>
+    <section class="card">
+      <h4>Recent runs</h4>
+      <table class="tbl">
+        <tr><th>Run</th><th>Waves</th><th>Orders</th><th>Skipped</th><th></th></tr>
+        {% for run in runs %}
+        <tr>
+          <td>{{ run.run_id }}</td><td>{{ run.n_waves }}</td>
+          <td>{{ run.n_orders }}</td><td>{{ run.n_skipped }}</td>
+          <td><a href="/runs/{{ run.run_id }}">View →</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="muted">No runs yet.</td></tr>
+        {% endfor %}
+      </table>
+    </section>
+  </div>
+</div>
+{% endblock %}

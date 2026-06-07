@@ -67,13 +67,29 @@ until the slotting logic has been validated against reality for a quarter.
   to Parquet with date windows.
 - `scripts/analyze.py`: orchestrates analysis, writes CSVs, plots, the
   Go Cold themed `capture_template.xlsx`, and a readable `summary.md`.
+- `src/dispatch/`: read-only delivery-run prediction — learns habitual
+  address→run pairings from CC consignment history, predicts today's open
+  orders onto runs (confidence + reason), splits carriers, writes review
+  files. Orchestrator: `scripts/build_dispatch.py`. CC stays read-only;
+  `CartonCloudSink` write-back is built but refuses to act (v1).
+- `src/web_dispatch/`: dispatcher-facing run console (FastAPI + HTMX + SSE,
+  the delivery-side twin of the wave-pick console). Triggers
+  `build_dispatch` with live progress, browses predicted runs + the review
+  queue, downloads per-run manifests. Launcher `scripts/serve_web_dispatch.py`
+  (127.0.0.1:8078); published at runs.rolodex-ai.com via the `wms-runs`
+  Cloudflare tunnel. Read-only against CC. The build core is
+  `src/dispatch/runner.py`, shared with the CLI.
 
 ## Validated against real data (10 May 2026)
 
 - 95,212 SO line items / 90 days
 - 9,613 PO line items / 180 days
 - 460 active products
-- **0 / 460 SKUs have carton dimensions in CC** — primary blocker
+- **Carton dims (updated 12 May 2026): ~409 SKUs captured LOCALLY**
+  (`data/dims/`, L/W/H 100%, inner-pack-qty 99.5%, weight ~69%) — but
+  **0 synced to CartonCloud.** Local dims drive slotting/wave analysis
+  today; CC-native wave + cartonisation need them IN CC. The original
+  "0/460 in CC" blocker is now a *sync* problem, not a *capture* problem.
 - Customer-scoped API client sees only "The Forage Company" (UUID
   `d4810e1e-91ab-43ed-b68e-b72bd858b122`)
 - Tenant: `4906532d-94ad-444c-89cf-e394d7d73581` (GoCold Warehouse Management)
@@ -93,6 +109,36 @@ until the slotting logic has been validated against reality for a quarter.
    capped that hard but be polite.
 6. **API version**: `Accept-Version: 1` for almost everything; warehouse
    products supports `Accept-Version: 8` for the latest schema.
+7. **`/warehouse-locations/search` returns 404** (not 403) on this tenant —
+   the path is not exposed on the public v1 API. This is NOT a missing read
+   scope. Location data therefore comes from (a) CC's UI XLS export
+   (`data/locations/`, loaded by `src/locations/cc_loader.py`) and (b) the
+   SOH report-run aggregated by `location` (`get_sku_locations`).
+   So a "no stock locations" symptom in wave generation is a data/source
+   issue, not a credential-scope one — don't re-chase the scope theory.
+8. **SOH `aggregateBy` only accepts a fixed set of dimensions** (422 on
+   anything else): productStatus, productGroup, productType, unitOfMeasure,
+   inboundOrder, batch, receivedWeek, sscc, sapLineNo, expiryDate,
+   **location**. Use `location` (NOT `warehouseLocation`) and `productType`
+   (NOT `product`). In the aggregated SOH item, the SKU is under
+   `details.product.references.code` and the location under
+   `properties.location` — see `get_sku_locations` and `test_sku_locations`.
+
+## Credentials & scopes
+
+- **Only `./.env` holds live CC creds** (`CC_CLIENT_ID` / `CC_CLIENT_SECRET`
+  / `CC_TENANT_ID`), OAuth2 client_credentials. The `dim-capture-app/*`
+  envs are a different, not-yet-live auth model (Bearer `CC_API_KEY`) and
+  currently hold placeholders only.
+- **Granted scopes in use (all reads):** orders + SOH/inventory via the
+  *WMS Create Job* role (`/outbound-orders`, `/inbound-orders`,
+  `/report-runs`); carton dims via *WMS Add/Edit Product*
+  (`/warehouse-products`). CC's `/uaa/userinfo` does not enumerate
+  authorities — verify scope functionally (search + a SOH report-run).
+- **Rotation:** done via "reset secret" on the existing client (same
+  client ID, new secret — old secret dies server-side immediately, so any
+  other host holding it, e.g. the NUC, breaks until updated). Last rotated
+  5 Jun 2026, verified read-green (auth/orders/products/SOH).
 
 ## Safety rules — DO NOT VIOLATE
 
@@ -108,14 +154,18 @@ until the slotting logic has been validated against reality for a quarter.
 
 - API client + extract + analysis all working end-to-end against real
   Forage data (validated 10 May 2026).
-- **Carton dim capture is the next blocker.** `capture_template.xlsx`
-  ready for warehouse team — 460 SKUs sorted by measurement priority,
-  Go Cold branded.
-- Once dims are captured, next build:
+- **Carton dim capture is DONE** (~409 SKUs, captured 12 May 2026 via the
+  Go Cold branded `capture_template.xlsx`). **The next blocker is dims→CC
+  sync** — getting captured dims into CartonCloud. That work lives in the
+  `dim-capture-app/` sub-project (modules 02 `cc-client` PATCH /products +
+  04 `dim-api`/syncService — both not yet built).
+- Now that dims exist locally, next build:
     - Slotting recommendations: which SKU at which bay height
       (1500/1100/750mm) given (cube × velocity × replen frequency)
     - Replen rule generator: set qty trigger vs max-fill trigger per SKU
     - True bench-bypass threshold based on pallet fit, not just qty
+- Dispatch v1 (predict-to-run) built; v2 = stop sequencing; write-back
+  pending SAP B1 boundary.
 - Run sequencing needs a separate convo about how runs are currently
   defined and what road clusters make sense for these postcodes.
 
