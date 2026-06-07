@@ -56,3 +56,22 @@ def test_immediate_streams_emit_one_wave_per_run_stream():
     assert len(pallet_waves) == 1
     assert pallet_waves.iloc[0]["order_count"] == 2
     assert pallet_waves.iloc[0]["release_reason"] == "immediate"
+
+
+def test_immediate_pallet_waves_split_by_run():
+    # Distinct runs must NOT be merged into one wave: two pallet orders on
+    # RUN-A collapse to one wave, RUN-B's order forms its own.
+    c = _classification([
+        {"so_id": "p1", "stream": STREAM_PALLET, "total_cartons": 80,
+         "ts_packed": _TS, "predicted_run": "RUN-A"},
+        {"so_id": "p2", "stream": STREAM_PALLET, "total_cartons": 70,
+         "ts_packed": _TS, "predicted_run": "RUN-A"},
+        {"so_id": "p3", "stream": STREAM_PALLET, "total_cartons": 60,
+         "ts_packed": _TS, "predicted_run": "RUN-B"},
+    ])
+    plan = plan_waves(
+        c, run_group_col="predicted_run", include_immediate_streams=True)
+    pallet_waves = plan.per_wave[plan.per_wave["stream"] == STREAM_PALLET]
+    assert len(pallet_waves) == 2
+    by_run = pallet_waves.set_index("run_group")["order_count"].to_dict()
+    assert by_run == {"RUN-A": 2, "RUN-B": 1}
