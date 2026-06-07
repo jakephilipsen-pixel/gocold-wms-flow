@@ -59,8 +59,13 @@ PALLET_USABLE_CUBE_MM3 = (
     PALLET_FOOTPRINT_L_MM * PALLET_FOOTPRINT_W_MM * PALLET_USABLE_HEIGHT_MM
 )
 
-# Default Stream 1 trigger - 70% of a pallet equivalent. Tunable.
-DEFAULT_PALLET_FRACTION_THRESHOLD = 0.70
+# Default Stream 1 trigger. Calibrated 2026-06-08 against a 90-day order window
+# (6,085 orders): 0.51 is the 90th-percentile knee of real cube-fractions and
+# catches pallet picks from ~56 cartons up - the bottom of Go Cold's 60-90 carton
+# pallet range. Full pallets are caught regardless via the position method
+# (cartons / cartons_per_pallet); this threshold only governs partial pallets.
+# Retune with scripts/calibrate_pallet_cube.py; override per-run via the flag.
+DEFAULT_PALLET_FRACTION_THRESHOLD = 0.51
 
 # Default wave release rule - hold to 13:00 (Melbourne local time) and
 # release earlier if accumulated cartons reaches threshold.

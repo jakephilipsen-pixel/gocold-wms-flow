@@ -32,7 +32,7 @@ def test_settings_defaults_pull_from_analysis_constants():
     s = WaveRunSettings(repo_root=Path("/tmp/repo"))
     assert s.status == "AWAITING_PICK_AND_PACK"
     assert s.customer_name is None
-    assert s.pallet_fraction_threshold == 0.70
+    assert s.pallet_fraction_threshold == 0.51
     assert s.early_release_cartons == 30
     assert s.run_group_col == "predicted_run"
     assert s.lines_per_hour == 60

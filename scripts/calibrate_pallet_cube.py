@@ -24,6 +24,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / "src"))
 
 from analysis import (  # noqa: E402
+    DEFAULT_PALLET_FRACTION_THRESHOLD,
     compute_order_metrics,
     compute_velocity,
     apply_tags,
@@ -78,7 +79,7 @@ def main() -> int:
         print(f"  {k:>22}: {v}")
     print()
     print(f"Set --pallet-fraction-threshold {rec['recommended_threshold']} "
-          f"(currently default 0.70).")
+          f"(currently default {DEFAULT_PALLET_FRACTION_THRESHOLD}).")
     return 0
 
 

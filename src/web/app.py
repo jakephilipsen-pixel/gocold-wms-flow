@@ -45,7 +45,7 @@ def create_app(repo_root: Path | None = None) -> FastAPI:
         request: Request,
         status: str = Form("AWAITING_PICK_AND_PACK"),
         customer_name: str = Form(""),
-        pallet_fraction_threshold: float = Form(0.70),
+        pallet_fraction_threshold: float = Form(0.51),
         early_release_cartons: int = Form(30),
         run_group_col: str = Form("predicted_run"),
     ):

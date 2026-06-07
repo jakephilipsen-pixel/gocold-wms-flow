@@ -95,6 +95,7 @@ def test_index_renders_form(client):
     assert "Wave Pick Console" in r.text
     assert "AWAITING_PICK_AND_PACK" in r.text
     assert 'name="pallet_fraction_threshold"' in r.text
+    assert 'value="0.51"' in r.text  # calibrated pallet-cube default
 
 
 def test_index_lists_existing_runs(tmp_path, client):
