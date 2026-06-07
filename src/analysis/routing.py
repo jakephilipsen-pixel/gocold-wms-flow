@@ -44,6 +44,7 @@ import pandas as pd
 
 from .loaders import Snapshot
 from .full_pallet import FullPalletAnalysis
+from .dispatch_link import FLAGGED_DISPATCH
 
 log = logging.getLogger(__name__)
 
@@ -490,6 +491,15 @@ def classify_streams(
                 f"(order has {int(row.total_cartons)})"
             )
             rules_fired.append("R2_consignee_min_cartons")
+            continue
+
+        # R2b: dispatch flagged this order's run as untrustworthy (or it was
+        # absent from the plan) -> build it to a pallet, don't risk the bench.
+        dispatch_flag = getattr(row, "dispatch_flag", None)
+        if isinstance(dispatch_flag, str) and dispatch_flag in FLAGGED_DISPATCH:
+            streams.append(STREAM_PALLET)
+            reasons.append(f"dispatch flag '{dispatch_flag}' -> pallet")
+            rules_fired.append("R2b_dispatch_flagged")
             continue
 
         # R3: any line flagged as full pallet
