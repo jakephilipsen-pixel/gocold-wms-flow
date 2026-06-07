@@ -834,11 +834,22 @@ def plan_waves(
     )
 
 
+def _slug(value: str) -> str:
+    """Reduce a label to a filesystem-safe single path segment.
+
+    Keeps letters, digits, dot, underscore, dash; every other run of
+    characters (spaces, slashes, punctuation) collapses to a single dash.
+    Leading/trailing dashes are stripped. Empty result -> "UNK".
+    """
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", str(value)).strip("-")
+    return cleaned or "UNK"
+
+
 def _make_wave_id(
     receive_date: object, run_group: object, stream: str, idx: int
 ) -> str:
     d = receive_date.isoformat() if hasattr(receive_date, "isoformat") else str(receive_date)
-    rg = str(run_group) if run_group is not None and not (
+    rg = _slug(run_group) if run_group is not None and not (
         isinstance(run_group, float) and np.isnan(run_group)
     ) else "UNK"
     stream_short = stream.split("_", 1)[0]  # 2 or 3
