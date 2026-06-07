@@ -69,12 +69,18 @@ def load_dispatch_link(plan_dir: Path) -> pd.DataFrame:
         for col in _LINK_COLS:
             if col not in df.columns:
                 df[col] = pd.NA
+        df = df.dropna(subset=["so_id"])
+        if df.empty:
+            continue
         df["so_id"] = df["so_id"].astype(str)
         frames.append(df[_LINK_COLS])
     if not frames:
+        log.warning("no dispatch data found in %s", plan_dir)
         return pd.DataFrame(columns=_LINK_COLS)
     link = pd.concat(frames, ignore_index=True)
-    return link.drop_duplicates("so_id", keep="first").reset_index(drop=True)
+    link = link.drop_duplicates("so_id", keep="first").reset_index(drop=True)
+    log.info("loaded %d mapped orders from dispatch plan %s", len(link), plan_dir.name)
+    return link
 
 
 def attach_dispatch_runs(
@@ -87,6 +93,7 @@ def attach_dispatch_runs(
     under a ``no_run`` bucket and route to the pallet stream — never dropped.
     """
     out = per_order.copy()
+    out = out.drop(columns=["predicted_run", "dispatch_flag"], errors="ignore")
     out["so_id"] = out["so_id"].astype(str)
     if link is None or link.empty:
         out["predicted_run"] = "no_run"

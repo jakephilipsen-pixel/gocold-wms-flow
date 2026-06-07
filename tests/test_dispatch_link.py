@@ -76,3 +76,17 @@ def test_attach_with_empty_link_marks_all_no_run():
     out = attach_dispatch_runs(per_order, pd.DataFrame())
     assert out["predicted_run"].iloc[0] == "no_run"
     assert out["dispatch_flag"].iloc[0] == "no_run"
+
+
+def test_load_dispatch_link_suggested_wins_over_review(tmp_path):
+    plan = tmp_path / "p"
+    _write_plan(
+        plan,
+        suggested_rows=[["SO-1", "id-1", "RUN-A", 0.95, "stable"]],
+        review_rows=[["SO-1", "id-1", "RUN-Z", 0.20, "mixed"]],
+    )
+    link = load_dispatch_link(plan)
+    assert len(link) == 1
+    row = link.iloc[0]
+    assert row["predicted_run"] == "RUN-A"
+    assert row["dispatch_flag"] == "stable"
