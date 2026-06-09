@@ -2,6 +2,7 @@
 .env
 .env.local
 *.secret
+secrets/*.txt
 
 # Extracted CC data - large, contains customer info
 data/raw/
@@ -33,3 +34,6 @@ venv/
 
 # Superpowers brainstorm working dir
 .superpowers/
+
+# Local-only laptop bring-up override
+docker-compose.override.yml

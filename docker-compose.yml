@@ -1,0 +1,172 @@
+# Go Cold WMS — single production stack for the LAN-only NUC.
+#
+#   Caddy (the ONLY host-published service, :80)
+#     ├─ picks.gocold.local → picks   (wave pick console,   FastAPI :8077)
+#     ├─ runs.gocold.local  → runs    (dispatch run console, FastAPI :8078)
+#     └─ dims.gocold.local  → dims-frontend (nginx PWA :80)
+#                                └─ /api/* → dims-backend (Express :3005)
+#                                              └─ postgres:5432 (dimcapture)
+#
+# Everything but Caddy lives on the internal bridge network with NO host
+# ports. Postgres has no host port and its password comes from the
+# ./secrets/db_password.txt Docker secret. The two Python consoles share one
+# image (gocold-consoles) and bind-mount ./data + ./.env from the host.
+#
+# Bring up:  see DEPLOY.md (set secret, create .env, chown data, then up).
+
+name: gocold-wms
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_logs:
+
+services:
+  # ---- Postgres (internal only, secret-fed password) --------------------
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    networks: [internal]
+    environment:
+      POSTGRES_DB: dimcapture
+      POSTGRES_USER: gocold
+      # Password read from the Docker secret file, never from env/image.
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gocold -d dimcapture"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # No `ports:` — reachable only as postgres:5432 on the internal network.
+
+  # ---- dim-capture backend (Express + Prisma) ---------------------------
+  dims-backend:
+    build:
+      context: ./dim-capture-app/backend
+      dockerfile: ../../deploy/dims-backend.Dockerfile
+    restart: unless-stopped
+    networks:
+      internal:
+        # The frontend's nginx.conf proxies /api to the host `backend:3005`
+        # (its original service name). Alias it so we don't have to edit the
+        # app's nginx config.
+        aliases:
+          - backend
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "3005"
+      FRONTEND_URL: http://dims.gocold.local
+      # Pinned per-service (the consoles use a DIFFERENT CC base); this
+      # overrides anything in .env so the shared file can't poison it.
+      CC_BASE_URL: https://app.cartoncloud.com.au/api/v1
+    secrets:
+      - db_password
+    # Assemble DATABASE_URL from the secret at run time, then migrate + serve.
+    # `$$` escapes compose interpolation so the shell runs $(cat ...).
+    entrypoint:
+      - sh
+      - -c
+      - |
+        export DATABASE_URL="postgresql://gocold:$$(cat /run/secrets/db_password)@postgres:5432/dimcapture?schema=public"
+        npx prisma migrate deploy
+        exec node dist/index.js
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3005/api/health | grep -q '\"db\":\"connected\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # No `ports:` — reached only via the dims-frontend /api proxy.
+
+  # ---- dim-capture frontend (Vite PWA on nginx, /api → backend) ---------
+  dims-frontend:
+    build:
+      context: ./dim-capture-app/frontend
+      # Relative API base → single origin; nginx proxies /api → dims-backend.
+      args:
+        VITE_API_URL: ""
+    restart: unless-stopped
+    networks: [internal]
+    depends_on:
+      dims-backend:
+        condition: service_healthy
+    # No `ports:` — Caddy reaches it as dims-frontend:80 on the internal net.
+
+  # ---- wave pick console (picks.gocold.local) ---------------------------
+  picks:
+    image: gocold-consoles
+    build:
+      context: .
+      dockerfile: deploy/consoles.Dockerfile
+    restart: unless-stopped
+    networks: [internal]
+    command: ["uvicorn", "web.app:app", "--host", "0.0.0.0", "--port", "8077"]
+    env_file:
+      - .env
+    environment:
+      # Consoles talk to the global CC API (NOT the .com.au base the backend
+      # uses); pin it so the shared .env can't override it.
+      CC_BASE_URL: https://api.cartoncloud.com
+    volumes:
+      - ./.env:/app/.env:ro            # live CC creds, read-only
+      - ./data:/app/data               # customer data + run output (host disk)
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request as u; u.urlopen('http://127.0.0.1:8077/', timeout=5)\" || exit 1"]
+      interval: 15s
+      timeout: 8s
+      retries: 5
+    # No `ports:` — Caddy reaches it as picks:8077 on the internal net.
+
+  # ---- dispatch run console (runs.gocold.local) -------------------------
+  runs:
+    image: gocold-consoles            # same image as picks (built once)
+    restart: unless-stopped
+    networks: [internal]
+    command: ["uvicorn", "web_dispatch.app:app", "--host", "0.0.0.0", "--port", "8078"]
+    env_file:
+      - .env
+    environment:
+      CC_BASE_URL: https://api.cartoncloud.com
+    volumes:
+      - ./.env:/app/.env:ro
+      - ./data:/app/data
+    depends_on:
+      - picks                          # ensures the shared image is built first
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request as u; u.urlopen('http://127.0.0.1:8078/', timeout=5)\" || exit 1"]
+      interval: 15s
+      timeout: 8s
+      retries: 5
+    # No `ports:` — Caddy reaches it as runs:8078 on the internal net.
+
+  # ---- Caddy reverse proxy (the ONLY host-exposed service) --------------
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    networks: [internal]
+    ports:
+      - "80:80"                        # LAN HTTP only; no 443 (no public certs)
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_logs:/var/log/caddy
+    depends_on:
+      - picks
+      - runs
+      - dims-frontend

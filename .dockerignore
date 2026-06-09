@@ -1,0 +1,48 @@
+# Build context = repo root, used ONLY by deploy/consoles.Dockerfile.
+# The image copies just requirements.txt, src/ and config/. Everything else is
+# excluded so customer data + secrets never enter the build context, and so the
+# daemon isn't shipped the whole repo on every build.
+
+# Secrets & live credentials — NEVER into an image
+.env
+.env.*
+!.env.example
+secrets/
+
+# Customer data (parquet, dims, locations, processed waves/dispatch manifests)
+data/
+
+# The separate Node sub-project builds from its own context
+dim-capture-app/
+
+# VCS, venvs, caches, tooling
+.git/
+.gitignore
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.superpowers/
+.claude/
+
+# Docs, notebooks, one-off artefacts not needed at runtime
+docs/
+notebooks/
+tests/
+*.md
+*.pdf
+*.xlsx
+*.xls
+*.ods
+audit.json
+src/**/*.bak
+
+# Editor noise
+.vscode/
+.idea/
+*.swp
+.DS_Store
