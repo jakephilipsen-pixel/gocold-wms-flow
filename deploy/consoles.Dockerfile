@@ -37,6 +37,9 @@ COPY --from=builder /opt/venv /opt/venv
 # Application code + static config only. NO data/, NO .env (bind-mounted).
 COPY src ./src
 COPY config ./config
+# wave_runner lazy-loads _flatten_outbound_order_lines from scripts/extract.py
+# by file path (scripts/ is not a package), so the dir must be present.
+COPY scripts ./scripts
 USER app
 # Default command = picks console; the `runs` service overrides it in compose.
 EXPOSE 8077
