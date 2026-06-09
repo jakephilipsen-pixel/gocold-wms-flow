@@ -1,0 +1,43 @@
+# Go Cold WMS — LAN-only reverse proxy.
+#
+# Plain HTTP on the warehouse LAN: the `http://` site scheme + `auto_https off`
+# stop Caddy ever trying to provision a public certificate for these
+# non-routable .local names (which would fail and spew TLS warnings).
+#
+# Caddy runs INSIDE the compose network, so it resolves the app services by
+# name (picks / runs / dims-frontend) via Docker DNS — no host ports needed.
+# Staff devices reach this via an /etc/hosts entry pointing the .local names
+# at the NUC's static LAN IP (see DEPLOY.md).
+
+{
+	admin off
+	auto_https off
+}
+
+# Per-site rolling access log (snippet; arg = log basename).
+(lanlog) {
+	log {
+		output file /var/log/caddy/{args[0]}.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+	}
+}
+
+# Wave pick console
+http://picks.gocold.local {
+	import lanlog picks
+	reverse_proxy picks:8077
+}
+
+# Dispatch run console
+http://runs.gocold.local {
+	import lanlog runs
+	reverse_proxy runs:8078
+}
+
+# Dim-capture PWA (nginx serves the SPA and proxies its own /api → backend)
+http://dims.gocold.local {
+	import lanlog dims
+	reverse_proxy dims-frontend:80
+}
