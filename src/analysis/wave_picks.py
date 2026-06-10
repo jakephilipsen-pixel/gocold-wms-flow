@@ -157,7 +157,8 @@ def _select_location(
     occurrence wins ties, preserving walk order — falling back to the
     head row flagged ``reserve_unavailable`` when the SKU has no
     reserve stock. ``qty_short`` marks a reserve known to hold fewer
-    eaches than the line needs.
+    eaches than the line needs; consolidation later re-derives it for
+    the combined pick, including pick-face fallback rows.
     """
     flags = {"reserve_unavailable": False, "qty_short": False}
     if pick_uom != PICK_UOM_CARTON:
