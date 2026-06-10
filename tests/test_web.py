@@ -282,8 +282,35 @@ def test_post_runs_passes_min_full_cartons(tmp_path):
         "pallet_fraction_threshold": "0.51", "early_release_cartons": "30",
         "run_group_col": "delivery_state", "min_full_cartons": "2"})
     import time
-    time.sleep(0.2)  # job thread
+    for _ in range(50):  # job thread — poll instead of a fixed sleep
+        if "min_full_cartons" in seen:
+            break
+        time.sleep(0.02)
     assert seen["min_full_cartons"] == 2
+
+
+def test_wave_detail_shows_uom_and_flags(tmp_path, client):
+    """CTN rows render qty as 'N CTN (M EA)' plus flag badges; the old
+    each-row from _make_run still renders its bare qty unchanged."""
+    base = tmp_path / "data" / "processed" / "waves"
+    run = _make_run(base, "20260611_100000")
+    pd.DataFrame([
+        {"walk_index": 1, "location": "AA-01-03", "product_code": "FRG-0042",
+         "product_name": "Oats", "pick_uom": "CTN", "qty_cartons": 3,
+         "qty_eaches": 36.0, "cartons_running_total": 3,
+         "contributing_so_refs": "SO-1", "unallocated": False,
+         "reserve_unavailable": True, "qty_short": False},
+        {"walk_index": 2, "location": "AA-01-01", "product_code": "FRG-0099",
+         "product_name": "Bars", "pick_uom": "EA", "qty_cartons": 2,
+         "qty_eaches": None, "cartons_running_total": 5,
+         "contributing_so_refs": "SO-2", "unallocated": False,
+         "reserve_unavailable": False, "qty_short": True},
+    ]).to_csv(run / "VIC-bench-01" / "VIC-bench-01_picks.csv", index=False)
+    r = client.get("/runs/20260611_100000/waves/VIC-bench-01")
+    assert r.status_code == 200
+    assert "3 CTN (36 EA)" in r.text
+    assert "NO RESERVE" in r.text
+    assert "CHECK QTY" in r.text
 
 
 def test_run_detail_shows_carton_pick_stat(tmp_path, client):

@@ -59,3 +59,38 @@ def test_unparseable_qty_coerces_to_nan_not_object():
     df = build_sku_location_candidates(items)
     assert df["qty"].dtype == "float64"
     assert df["qty"].isna().all()
+
+
+def test_export_role_overrides_grammar():
+    """CC export says AA-01-03 is a pick face (e.g. efficiency override) —
+    export wins over grammar's 'reserve'."""
+    items = [
+        {"product_code": "FD-BAR", "location_name": "AA-01-03",
+         "location_id": "x1", "qty": 120, "uom_name": "Each"},
+        {"product_code": "FD-BAR", "location_name": "AA-01-01",
+         "location_id": "x2", "qty": 18, "uom_name": "Each"},
+    ]
+    roles = {"AA-01-03": True, "AA-01-01": True}
+    df = build_sku_location_candidates(items, location_roles=roles)
+    assert set(df["role"]) == {"pick_face"}
+
+
+def test_export_demotes_grammar_pick_face():
+    """Export says a grammar pick face is NOT one (efficiency < 21)."""
+    items = [{"product_code": "X", "location_name": "AA-01-01",
+              "location_id": "y", "qty": 5, "uom_name": "Each"}]
+    df = build_sku_location_candidates(items, location_roles={"AA-01-01": False})
+    assert df.iloc[0]["role"] == "reserve"
+
+
+def test_locations_absent_from_export_fall_back_to_grammar():
+    items = [
+        {"product_code": "X", "location_name": "AA-01-01",
+         "location_id": "y1", "qty": 5, "uom_name": "Each"},
+        {"product_code": "X", "location_name": "FLOOR-STAGING",
+         "location_id": "y2", "qty": 900, "uom_name": "Each"},
+    ]
+    df = build_sku_location_candidates(items, location_roles={"ZZ-09-09": True})
+    by_loc = df.set_index("location")
+    assert by_loc.loc["AA-01-01", "role"] == "pick_face"   # grammar fallback
+    assert by_loc.loc["FLOOR-STAGING", "role"] == "reserve"

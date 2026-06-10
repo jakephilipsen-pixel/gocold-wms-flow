@@ -48,6 +48,7 @@ from cc_client import (
     get_sku_locations,
     search_outbound_orders,
 )
+from locations.cc_loader import load_cc_locations
 from locations.grammar import parse_location_name
 from output import generate_wave_pdf, write_wave_csvs
 
@@ -113,20 +114,32 @@ _SKU_CAND_COLS = [
 ]
 
 
-def build_sku_location_candidates(items: list[dict]) -> pd.DataFrame:
+def build_sku_location_candidates(
+    items: list[dict],
+    location_roles: dict[str, bool] | None = None,
+) -> pd.DataFrame:
     """Every live SOH location per SKU, best-first within each SKU.
 
     Per-SKU ordering mirrors the old single-pick selection: pick faces
     before reserve, lowest grammar position, then walk order. ``role``
-    is 'pick_face' or 'reserve' — grammar-unknown names collapse to
-    'reserve' (if it isn't a known pick face, treat it as forklift
-    territory). ``qty`` is the SOH stock figure for that (SKU, location)
-    bucket in the bucket's reported UOM — eaches for Forage; ``uom``
-    carries the SOH label for auditability.
+    is 'pick_face' or 'reserve', resolved export-first:
+
+    - ``location_roles`` (location_name → is_pick_face from the CC
+      locations export, ``efficiency >= 21``) is AUTHORITATIVE for any
+      location it names;
+    - locations absent from the export fall back to the grammar parse
+      (``role_by_grammar == "pick_face"``);
+    - still-unknown names collapse to 'reserve' (if it isn't a known
+      pick face, treat it as forklift territory).
+
+    ``qty`` is the SOH stock figure for that (SKU, location) bucket in
+    the bucket's reported UOM — eaches for Forage; ``uom`` carries the
+    SOH label for auditability.
     """
     if not items:
         return pd.DataFrame(columns=_SKU_CAND_COLS).astype({"qty": "float64"})
 
+    roles = location_roles or {}
     candidates: list[dict] = []
     for it in items:
         code = it.get("product_code")
@@ -134,7 +147,10 @@ def build_sku_location_candidates(items: list[dict]) -> pd.DataFrame:
         if not code or not name:
             continue
         info = parse_location_name(name)
-        is_pick_face = info.role_by_grammar == "pick_face"
+        if name in roles:
+            is_pick_face = bool(roles[name])
+        else:
+            is_pick_face = info.role_by_grammar == "pick_face"
         candidates.append({
             "product_code": code,
             "location": name,
@@ -223,6 +239,23 @@ def _latest_file(dirpath: Path, pattern: str) -> Path | None:
         reverse=True,
     )
     return candidates[0] if candidates else None
+
+
+def _load_location_roles(repo_root: Path) -> dict[str, bool] | None:
+    """location_name -> is_pick_face from the latest CC locations export.
+
+    Returns None when no export exists — candidates then fall back to
+    grammar-only roles (the pre-export behaviour)."""
+    export_path = _latest_file(repo_root / "data" / "locations", "*.xlsx")
+    if export_path is None:
+        return None
+    try:
+        locs = load_cc_locations(export_path)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("failed to load CC locations export %s: %s — falling "
+                    "back to grammar-only roles", export_path, exc)
+        return None
+    return dict(zip(locs["location_name"], locs["is_pick_face"].astype(bool)))
 
 
 def _pull_open_orders(
@@ -476,6 +509,16 @@ def run_wave_generation(
             level="ok")
 
         # 6. live SKU -> location from stock-on-hand (mandatory, fresh).
+        # Location roles come from the CC locations export when present
+        # (authoritative); grammar is the fallback for absent names.
+        location_roles = _load_location_roles(repo_root)
+        if location_roles is not None:
+            emit("locations",
+                 f"CC location roles loaded for {len(location_roles)} "
+                 f"locations", level="ok")
+        else:
+            emit("locations", "no CC locations export — using grammar-only "
+                              "roles")
         emit("locations", "pulling live stock-on-hand for SKU locations…")
         codes = sorted({c for c in so_lines["product_code"].dropna().unique()})
         soh_customer_id = (so_lines.iloc[0]["customer_id"]
@@ -487,7 +530,8 @@ def run_wave_generation(
                 "locations available; refusing to wave from stale data")
         items = get_sku_locations(
             client, customer_id=soh_customer_id, product_codes=codes)
-        sku_locations = build_sku_location_candidates(items)
+        sku_locations = build_sku_location_candidates(
+            items, location_roles=location_roles)
         if sku_locations.empty:
             raise CartonCloudError(
                 "live SOH returned no SKU locations — refusing to generate a "
@@ -517,7 +561,7 @@ def run_wave_generation(
         emit("generate",
              f"{result.summary['n_waves']} waves, "
              f"{result.summary['n_orders_total']} orders, "
-             f"{result.summary['n_lines_carton_pick']} carton-pick lines "
+             f"{result.summary['n_lines_carton_pick']} consolidated carton-pick rows "
              f"({result.summary['n_carton_picks_no_reserve']} no-reserve), "
              f"{result.summary['n_lines_unallocated']} unallocated lines, "
              f"{result.summary['n_orders_skipped']} skipped", level="ok")
