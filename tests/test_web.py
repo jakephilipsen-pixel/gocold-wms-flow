@@ -255,3 +255,56 @@ def test_run_detail_surfaces_skus_to_measure(tmp_path, client):
     assert r.status_code == 200
     assert "SKUs to measure" in r.text
     assert "FRG-0001" in r.text and "FRG-0002" in r.text
+
+
+def test_index_form_has_min_full_cartons(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    assert 'name="min_full_cartons"' in r.text
+
+
+def test_post_runs_passes_min_full_cartons(tmp_path):
+    from fastapi.testclient import TestClient
+    import web.app as appmod
+    from wave_runner import RunResult
+
+    seen = {}
+
+    def fake_run(settings, progress):
+        seen["min_full_cartons"] = settings.min_full_cartons
+        return RunResult("r", tmp_path, {"n_waves": 0}, "empty")
+
+    app = appmod.create_app(repo_root=tmp_path)
+    app.state.manager._runner = fake_run
+    client = TestClient(app)
+    client.post("/runs", data={
+        "status": "X", "customer_name": "",
+        "pallet_fraction_threshold": "0.51", "early_release_cartons": "30",
+        "run_group_col": "delivery_state", "min_full_cartons": "2"})
+    import time
+    time.sleep(0.2)  # job thread
+    assert seen["min_full_cartons"] == 2
+
+
+def test_run_detail_shows_carton_pick_stat(tmp_path, client):
+    base = tmp_path / "data" / "processed" / "waves"
+    run = _make_run(base, "20260611_090000")
+    manifest = json.loads((run / "manifest.json").read_text())
+    manifest["summary"]["n_lines_carton_pick"] = 4
+    manifest["summary"]["n_carton_picks_no_reserve"] = 1
+    (run / "manifest.json").write_text(json.dumps(manifest))
+    r = client.get("/runs/20260611_090000")
+    assert r.status_code == 200
+    assert "Carton picks" in r.text
+
+
+def test_list_runs_surfaces_carton_counts(tmp_path):
+    from web.runs import list_runs
+    run = _make_run(tmp_path, "20260611_090000")
+    manifest = json.loads((run / "manifest.json").read_text())
+    manifest["summary"]["n_lines_carton_pick"] = 4
+    manifest["summary"]["n_carton_picks_no_reserve"] = 1
+    (run / "manifest.json").write_text(json.dumps(manifest))
+    runs = list_runs(tmp_path)
+    assert runs[0]["n_lines_carton_pick"] == 4
+    assert runs[0]["n_carton_picks_no_reserve"] == 1

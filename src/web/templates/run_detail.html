@@ -7,6 +7,8 @@
   <div class="stat"><div class="n">{{ run.summary.n_pick_lines_total }}</div><div class="l">Pick lines</div></div>
   <div class="stat"><div class="n">{{ run.summary.n_orders_skipped }}</div><div class="l">Skipped</div></div>
   <div class="stat"><div class="n">{{ run.summary.n_lines_unallocated }}</div><div class="l">Unallocated lines</div></div>
+  <div class="stat"><div class="n">{{ run.summary.n_lines_carton_pick or 0 }}</div><div class="l">Carton picks</div></div>
+  <div class="stat"><div class="n">{{ run.summary.n_carton_picks_no_reserve or 0 }}</div><div class="l">No reserve</div></div>
 </div>
 <section class="card mb">
   <table class="tbl">

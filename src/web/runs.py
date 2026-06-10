@@ -38,6 +38,8 @@ def list_runs(base: Path) -> list[dict]:
             "n_skipped": s.get("n_orders_skipped", 0),
             "n_lines_unallocated": s.get("n_lines_unallocated", 0),
             "n_skus_unallocated": s.get("n_skus_unallocated", 0),
+            "n_lines_carton_pick": s.get("n_lines_carton_pick", 0),
+            "n_carton_picks_no_reserve": s.get("n_carton_picks_no_reserve", 0),
             "settings": m.get("settings", {}),
         })
     return runs
