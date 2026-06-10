@@ -94,7 +94,7 @@ def test_settings_dict_records_min_full_cartons(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def _fake_order(so_ref, code):
+def _fake_order(so_ref, code, qty=5):
     """A minimal CC outbound order shaped to feed the REAL flattener.
 
     Mirrors exactly the keys ``scripts/extract.py:_flatten_outbound_order_lines``
@@ -141,7 +141,7 @@ def _fake_order(so_ref, code):
                     },
                     "unitOfMeasure": {"type": "EA", "name": "Each"},
                 },
-                "measures": {"quantity": 5},
+                "measures": {"quantity": qty},
                 "properties": {"batch": "20271002", "expiryDate": "2027-10-02"},
             }
         ],
@@ -262,6 +262,68 @@ def test_index_lists_skus_to_measure(tmp_path, fake_cc):
     index = (result.out_dir / "index.md").read_text()
     assert "SKUs to measure" in index
     assert "SOME-SKU" in index
+
+
+def test_carton_conversion_flows_through_to_picks_csv(tmp_path, fake_cc):
+    """E2E wiring guard for the each→carton split (step 7).
+
+    Uses a real combo SKU (inner_pack_qty > 1) from the same dims file the
+    runner resolves, orders two full cartons of it, and stubs SOH with a
+    pick face AND a reserve. The run must emit the conversion event and
+    the written picks CSV must carry a CTN line routed to the reserve —
+    proving settings.min_full_cartons actually reaches split_lines and the
+    converted line survives sheet generation + CSV output.
+    """
+    import pandas as pd
+    from analysis import PICK_UOM_CARTON, load_dimensions
+    from wave_runner import _latest_file
+
+    dims = load_dimensions(_latest_file(_ROOT / "data" / "dims", "dims_*.xlsx"))
+    ipq_num = pd.to_numeric(dims["inner_pack_qty"], errors="coerce")
+    combo = dims[(ipq_num > 1) & (ipq_num.mod(1) == 0)
+                 & dims["measurement_complete"]]
+    assert not combo.empty, "dims file has no convertible combo SKUs"
+    sku = str(combo.iloc[0]["product_code"])
+    ipq = int(combo.iloc[0]["inner_pack_qty"])
+
+    orders = [_fake_order("SO-1", sku, qty=ipq * 2)]  # two full cartons
+    fake_cc.setattr(
+        "wave_runner.search_outbound_orders",
+        lambda client, **kw: iter(orders),
+    )
+    # A pick face (AA-01-01) AND a reserve (AA-01-03) for the combo SKU —
+    # the CTN line must route to the reserve, not the pick face.
+    fake_cc.setattr(
+        "wave_runner.get_sku_locations",
+        lambda client, **kw: [
+            {"product_code": sku, "location_name": "AA-01-01",
+             "qty": 6, "uom_name": "Each"},
+            {"product_code": sku, "location_name": "AA-01-03",
+             "qty": 500, "uom_name": "Each"},
+        ],
+    )
+    events: list[ProgressEvent] = []
+    plan_dir = tmp_path / "dispatch"
+    _write_dispatch_plan(plan_dir, [("id-SO-1", "RUN-A", "stable")])
+    settings = WaveRunSettings(
+        repo_root=_ROOT, out_dir=tmp_path / "waves",
+        dispatch_plan_dir=plan_dir, min_full_cartons=1)
+    result = run_wave_generation(settings, events.append)
+
+    assert result.status == "success"
+    conversions = [e for e in events if "carton-pick lines produced" in e.message]
+    assert conversions, "conversion emit missing — split wiring regressed"
+    assert "min_full_cartons=1" in conversions[0].message
+
+    picks_csvs = list(result.out_dir.glob("*/*_picks.csv"))
+    assert picks_csvs, "no picks CSVs written for the generated wave(s)"
+    picks = pd.concat(
+        [pd.read_csv(p) for p in picks_csvs], ignore_index=True)
+    ctn = picks[(picks["product_code"] == sku)
+                & (picks["pick_uom"] == PICK_UOM_CARTON)]
+    assert len(ctn) == 1, f"expected one CTN pick line for {sku}, got:\n{picks}"
+    assert ctn.iloc[0]["location"] == "AA-01-03"  # reserve, not pick face
+    assert int(ctn.iloc[0]["qty_cartons"]) == 2
 
 
 def test_cli_main_builds_settings_and_runs(tmp_path, monkeypatch):

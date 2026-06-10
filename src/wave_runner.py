@@ -26,6 +26,7 @@ from analysis import (
     DEFAULT_FULL_PALLET_RATIO,
     DEFAULT_LINES_PER_HOUR,
     DEFAULT_PALLET_FRACTION_THRESHOLD,
+    PICK_UOM_CARTON,
     apply_tags,
     attach_dispatch_runs,
     classify_streams,
@@ -292,6 +293,7 @@ def _build_index_md(
         f"- Customer filter: `{cfg['customer_name'] or '(none)'}`",
         f"- pallet_fraction_threshold: {cfg['pallet_fraction_threshold']:.2f}",
         f"- early_release_cartons: {cfg['early_release_cartons']}",
+        f"- min_full_cartons: {cfg['min_full_cartons']}",
         f"- run_group_col: `{cfg['run_group_col']}`",
         f"- Pick rate assumption: {cfg['lines_per_hour']} lines/hour",
         "",
@@ -492,7 +494,7 @@ def run_wave_generation(
                 "wave with nothing placed")
         emit("locations",
              f"live SOH resolved {sku_locations['product_code'].nunique()} "
-             f"SKUs across {len(sku_locations)} locations "
+             f"SKUs across {sku_locations['location'].nunique()} locations "
              f"({len(items)} stock rows)", level="ok")
 
         # 7. wave generation (each→carton split first: combo-SKU lines
@@ -500,11 +502,12 @@ def run_wave_generation(
         emit("generate", "generating wave pick sheets…")
         wave_so_lines = split_lines(
             snap.so_lines, dims, min_full_cartons=settings.min_full_cartons)
-        n_ctn_lines = int((wave_so_lines["pick_uom"] == "CTN").sum())
+        n_ctn_lines = int((wave_so_lines["pick_uom"] == PICK_UOM_CARTON).sum())
         if n_ctn_lines:
             emit("generate",
-                 f"{n_ctn_lines} each-lines converted to carton picks "
-                 f"(min_full_cartons={settings.min_full_cartons})", level="ok")
+                 f"{n_ctn_lines} carton-pick lines produced from each-line "
+                 f"conversion (min_full_cartons={settings.min_full_cartons})",
+                 level="ok")
         result = generate_wave_pick_sheets(
             classification=classification, so_lines=wave_so_lines,
             sku_locations=sku_locations,
