@@ -372,6 +372,37 @@ def _esc(text) -> str:
     )
 
 
+def _flag(value) -> bool:
+    """NA/NaN-safe truthiness for pick-line flag columns (a CSV
+    round-trip turns absent bools into float NaN, which is truthy)."""
+    return bool(pd.notna(value) and value)
+
+
+def _qty_and_loc_html(r) -> tuple[str, str]:
+    """Qty + location cell markup for one pick-line row.
+
+    CTN lines render as "N CTN" with a small "(M EA)" sub-line; flagged
+    locations gain small warning markers. Rows without the carton-aware
+    columns (legacy frames) render exactly as before.
+    """
+    pick_uom = str(getattr(r, "pick_uom", "") or "")
+    qty_eaches = getattr(r, "qty_eaches", None)
+    if pick_uom == "CTN":
+        eaches = (
+            f"<br/><font size=7>({int(qty_eaches)} EA)</font>"
+            if pd.notna(qty_eaches) else ""
+        )
+        qty_html = f"<b>{int(r.qty_cartons):,} CTN</b>{eaches}"
+    else:
+        qty_html = f"<b>{int(r.qty_cartons):,}</b>"
+    loc_html = _esc(r.location)
+    if _flag(getattr(r, "reserve_unavailable", False)):
+        loc_html += "<br/><font size=6>NO RESERVE — PICK FACE</font>"
+    if _flag(getattr(r, "qty_short", False)):
+        loc_html += "<br/><font size=6>CHECK QTY AT LOCATION</font>"
+    return qty_html, loc_html
+
+
 def _wrap_cell(
     html: str, font: str | None = None, size: int = 9,
     align: str = "left",
@@ -407,21 +438,7 @@ def _pick_lines_table(pick_lines: pd.DataFrame) -> Table:
     ]
     rows = [header]
     for r in pick_lines.itertuples(index=False):
-        pick_uom = str(getattr(r, "pick_uom", "") or "")
-        qty_eaches = getattr(r, "qty_eaches", None)
-        if pick_uom == "CTN":
-            eaches = (
-                f"<br/><font size=7>({int(qty_eaches)} EA)</font>"
-                if qty_eaches is not None and pd.notna(qty_eaches) else ""
-            )
-            qty_html = f"<b>{int(r.qty_cartons):,} CTN</b>{eaches}"
-        else:
-            qty_html = f"<b>{int(r.qty_cartons):,}</b>"
-        loc_html = _esc(r.location)
-        if bool(getattr(r, "reserve_unavailable", False) or False):
-            loc_html += "<br/><font size=6>NO RESERVE — PICK FACE</font>"
-        if bool(getattr(r, "qty_short", False) or False):
-            loc_html += "<br/><font size=6>CHECK QTY AT LOCATION</font>"
+        qty_html, loc_html = _qty_and_loc_html(r)
         rows.append([
             _wrap_cell(
                 f"<b>{int(r.walk_index)}</b>",
@@ -503,21 +520,7 @@ def _unallocated_table(pick_lines: pd.DataFrame) -> Table:
     header = [Paragraph(label, header_white_style) for label in col_labels]
     rows = [header]
     for r in pick_lines.itertuples(index=False):
-        pick_uom = str(getattr(r, "pick_uom", "") or "")
-        qty_eaches = getattr(r, "qty_eaches", None)
-        if pick_uom == "CTN":
-            eaches = (
-                f"<br/><font size=7>({int(qty_eaches)} EA)</font>"
-                if qty_eaches is not None and pd.notna(qty_eaches) else ""
-            )
-            qty_html = f"<b>{int(r.qty_cartons):,} CTN</b>{eaches}"
-        else:
-            qty_html = f"<b>{int(r.qty_cartons):,}</b>"
-        loc_html = _esc(r.location)
-        if bool(getattr(r, "reserve_unavailable", False) or False):
-            loc_html += "<br/><font size=6>NO RESERVE — PICK FACE</font>"
-        if bool(getattr(r, "qty_short", False) or False):
-            loc_html += "<br/><font size=6>CHECK QTY AT LOCATION</font>"
+        qty_html, loc_html = _qty_and_loc_html(r)
         rows.append([
             _wrap_cell(loc_html, THEME.mono_font, 11, "center"),
             _wrap_cell(_esc(r.product_code), THEME.body_font_bold, 9),
