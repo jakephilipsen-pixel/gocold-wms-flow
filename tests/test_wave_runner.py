@@ -82,6 +82,13 @@ def test_load_dotenv_sets_missing_keys(tmp_path, monkeypatch):
     assert os.environ["BAZ"] == "qux"
 
 
+def test_settings_dict_records_min_full_cartons(tmp_path):
+    from wave_runner import WaveRunSettings, _settings_dict
+    s = WaveRunSettings(repo_root=tmp_path, min_full_cartons=2)
+    d = _settings_dict(s, tmp_path / "audit.parquet")
+    assert d["min_full_cartons"] == 2
+
+
 # ---------------------------------------------------------------------------
 # run_wave_generation — end-to-end against the real pipeline (no network).
 # ---------------------------------------------------------------------------

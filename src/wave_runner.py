@@ -38,6 +38,7 @@ from analysis import (
     load_dispatch_link,
     load_latest,
     run_full_pallet_analysis,
+    split_lines,
 )
 from analysis.loaders import Snapshot
 from cc_client import (
@@ -65,6 +66,7 @@ class WaveRunSettings:
     pallet_fraction_threshold: float = DEFAULT_PALLET_FRACTION_THRESHOLD
     early_release_cartons: int = DEFAULT_EARLY_RELEASE_CARTONS
     run_group_col: str = "predicted_run"
+    min_full_cartons: int = 1
     lines_per_hour: int = DEFAULT_LINES_PER_HOUR
     pallet_ratio: float = DEFAULT_FULL_PALLET_RATIO
     # Optional explicit paths; None = resolve from repo_root at run time.
@@ -361,6 +363,7 @@ def _settings_dict(settings, audit_path, resolved_plan_dir=None):
         "pallet_fraction_threshold": settings.pallet_fraction_threshold,
         "early_release_cartons": settings.early_release_cartons,
         "run_group_col": settings.run_group_col,
+        "min_full_cartons": settings.min_full_cartons,
         "dispatch_plan_dir": str(plan_dir) if plan_dir else None,
         "include_pallet_sheets": settings.include_pallet_sheets,
         "lines_per_hour": settings.lines_per_hour,
@@ -482,19 +485,28 @@ def run_wave_generation(
                 "locations available; refusing to wave from stale data")
         items = get_sku_locations(
             client, customer_id=soh_customer_id, product_codes=codes)
-        sku_locations = build_sku_locations_from_soh(items)
+        sku_locations = build_sku_location_candidates(items)
         if sku_locations.empty:
             raise CartonCloudError(
                 "live SOH returned no SKU locations — refusing to generate a "
                 "wave with nothing placed")
         emit("locations",
-             f"live SOH resolved {len(sku_locations)} SKU locations "
+             f"live SOH resolved {sku_locations['product_code'].nunique()} "
+             f"SKUs across {len(sku_locations)} locations "
              f"({len(items)} stock rows)", level="ok")
 
-        # 7. wave generation
+        # 7. wave generation (each→carton split first: combo-SKU lines
+        # spanning full cartons become CTN picks routed to reserve).
         emit("generate", "generating wave pick sheets…")
+        wave_so_lines = split_lines(
+            snap.so_lines, dims, min_full_cartons=settings.min_full_cartons)
+        n_ctn_lines = int((wave_so_lines["pick_uom"] == "CTN").sum())
+        if n_ctn_lines:
+            emit("generate",
+                 f"{n_ctn_lines} each-lines converted to carton picks "
+                 f"(min_full_cartons={settings.min_full_cartons})", level="ok")
         result = generate_wave_pick_sheets(
-            classification=classification, so_lines=snap.so_lines,
+            classification=classification, so_lines=wave_so_lines,
             sku_locations=sku_locations,
             run_group_col=settings.run_group_col,
             early_release_cartons=settings.early_release_cartons,
@@ -502,6 +514,8 @@ def run_wave_generation(
         emit("generate",
              f"{result.summary['n_waves']} waves, "
              f"{result.summary['n_orders_total']} orders, "
+             f"{result.summary['n_lines_carton_pick']} carton-pick lines "
+             f"({result.summary['n_carton_picks_no_reserve']} no-reserve), "
              f"{result.summary['n_lines_unallocated']} unallocated lines, "
              f"{result.summary['n_orders_skipped']} skipped", level="ok")
 
