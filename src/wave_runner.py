@@ -104,26 +104,24 @@ ProgressCallback = Callable[[ProgressEvent], None]
 
 _SKU_LOC_COLS = ["product_code", "location", "aisle", "bay", "level", "sublevel"]
 
+_SKU_CAND_COLS = [
+    "product_code", "location", "aisle", "bay", "level", "sublevel",
+    "role", "qty",
+]
 
-def build_sku_locations_from_soh(items: list[dict]) -> pd.DataFrame:
-    """Collapse live SOH rows into one pick-face location per SKU.
 
-    ``items`` are the dicts returned by ``cc_client.get_sku_locations``
-    (``product_code``, ``location_name``, ``location_id``, ``qty``, ``uom``).
-    Each location name is parsed through the warehouse grammar to recover
-    walk-order structure (aisle/bay/level/sublevel) and pick-face role.
+def build_sku_location_candidates(items: list[dict]) -> pd.DataFrame:
+    """Every live SOH location per SKU, best-first within each SKU.
 
-    Selection per SKU (best first):
-      1. pick faces before reserve/unknown,
-      2. lowest grammar position (1 before 2),
-      3. walk order (aisle, bay, level, sublevel).
-
-    A SKU with only reserve locations still resolves to its best reserve —
-    that is a real, live location, not ``unallocated``. Returns columns
-    ``product_code, location, aisle, bay, level, sublevel`` (one row per SKU).
+    Per-SKU ordering mirrors the old single-pick selection: pick faces
+    before reserve, lowest grammar position, then walk order. ``role``
+    is 'pick_face' or 'reserve' — grammar-unknown names collapse to
+    'reserve' (if it isn't a known pick face, treat it as forklift
+    territory). ``qty`` is the SOH stock figure for that (SKU, location)
+    bucket in the customer's ordering UOM (eaches for Forage).
     """
     if not items:
-        return pd.DataFrame(columns=_SKU_LOC_COLS)
+        return pd.DataFrame(columns=_SKU_CAND_COLS)
 
     candidates: list[dict] = []
     for it in items:
@@ -132,7 +130,7 @@ def build_sku_locations_from_soh(items: list[dict]) -> pd.DataFrame:
         if not code or not name:
             continue
         info = parse_location_name(name)
-        role_rank = 0 if info.role_by_grammar == "pick_face" else 1
+        is_pick_face = info.role_by_grammar == "pick_face"
         candidates.append({
             "product_code": code,
             "location": name,
@@ -140,21 +138,39 @@ def build_sku_locations_from_soh(items: list[dict]) -> pd.DataFrame:
             "bay": info.bay,
             "level": info.level,
             "sublevel": info.sublevel,
-            "_role_rank": role_rank,
-            "position": info.position,  # None stays None; sorts last via na_position
+            "role": "pick_face" if is_pick_face else "reserve",
+            "qty": pd.to_numeric(it.get("qty"), errors="coerce"),
+            "_role_rank": 0 if is_pick_face else 1,
+            "position": info.position,
         })
 
     if not candidates:
-        return pd.DataFrame(columns=_SKU_LOC_COLS)
+        return pd.DataFrame(columns=_SKU_CAND_COLS)
 
     df = pd.DataFrame(candidates)
     df = df.sort_values(
-        ["product_code", "_role_rank", "position", "aisle", "bay", "level", "sublevel"],
+        ["product_code", "_role_rank", "position",
+         "aisle", "bay", "level", "sublevel"],
         kind="mergesort",
         na_position="last",
+    ).reset_index(drop=True)
+    return df[_SKU_CAND_COLS]
+
+
+def build_sku_locations_from_soh(items: list[dict]) -> pd.DataFrame:
+    """Collapse live SOH rows into one best location per SKU.
+
+    Thin wrapper over ``build_sku_location_candidates`` kept for callers
+    that only want the single-location view (selection rules documented
+    there). Returns ``_SKU_LOC_COLS`` — one row per SKU.
+    """
+    cands = build_sku_location_candidates(items)
+    if cands.empty:
+        return pd.DataFrame(columns=_SKU_LOC_COLS)
+    return (
+        cands.drop_duplicates("product_code", keep="first")
+        .reset_index(drop=True)[_SKU_LOC_COLS]
     )
-    best = df.drop_duplicates("product_code", keep="first").reset_index(drop=True)
-    return best[_SKU_LOC_COLS]
 
 
 # ---------------------------------------------------------------------------
