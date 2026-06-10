@@ -126,3 +126,17 @@ def test_input_row_order_is_preserved():
     out = split_lines(lines, _dims([("FD-BAR", 6)]))
     assert list(out["product_code"]) == ["AAA-01", "FD-BAR", "FD-BAR", "ZZZ-09"]
     assert list(out["pick_uom"]) == ["EA", "CTN", "EA", "EA"]
+
+
+def test_order_preserved_with_duplicate_and_unsorted_input_index():
+    """Callers hand us frames straight from concat/filters — odd indexes
+    must not reorder the output."""
+    lines = _lines([
+        (1, "AAA-01", "A", 2),
+        (1, "FD-BAR", "Bar", 27),
+        (1, "ZZZ-09", "Z", 3),
+    ])
+    lines.index = [5, 0, 5]  # duplicate + non-monotonic
+    out = split_lines(lines, _dims([("FD-BAR", 6)]))
+    assert list(out["product_code"]) == ["AAA-01", "FD-BAR", "FD-BAR", "ZZZ-09"]
+    assert list(out["pick_uom"]) == ["EA", "CTN", "EA", "EA"]

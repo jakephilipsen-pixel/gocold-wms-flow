@@ -48,6 +48,7 @@ def split_lines(
     """Return ``so_lines`` with pick_uom / qty_eaches, splitting combo
     lines that span at least ``min_full_cartons`` full cartons."""
     out = so_lines.copy()
+    out.index = range(len(out))  # positional — order survives odd caller indexes
     out["pick_uom"] = PICK_UOM_EACH
     out["qty_eaches"] = pd.array([pd.NA] * len(out), dtype="Int64")
     if (
@@ -83,7 +84,6 @@ def split_lines(
     if not convertible.any():
         return out
 
-    # Single copy layer — no intermediate 'combo' variable needed.
     ctn = out[convertible].copy()
     full_ctns = (qty[convertible] // ipq[convertible]).astype(int)
     rem = (qty[convertible] % ipq[convertible]).astype(int)
