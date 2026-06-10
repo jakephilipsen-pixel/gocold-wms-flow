@@ -167,9 +167,17 @@ def _select_location(
         flags["reserve_unavailable"] = True
         return cands.iloc[0], flags
     qty = pd.to_numeric(reserves["qty"], errors="coerce")
+    # NaN qtys rank below any known qty — deliberately, a reserve known to
+    # hold 0 outranks one with unknown SOH (0 > -1 after fillna). That quirk
+    # buys deterministic routing; revisit if it bites in practice.
     best_label = qty.fillna(-1.0).idxmax()
     row = reserves.loc[best_label]
     best_qty = qty.loc[best_label]
+    if pd.isna(best_qty):
+        log.warning(
+            "CTN pick for %s routed to %s with unknown SOH qty",
+            cands.iloc[0].get("product_code"), row.get("location"),
+        )
     if (
         needed_eaches is not None
         and pd.notna(best_qty)
@@ -361,7 +369,7 @@ def generate_wave_pick_sheets(
 
     # Build the SKU -> location lookup once (live SOH only).
     sku_lookup = _build_sku_location_lookup(sku_locations)
-    sku_groups: dict = (
+    sku_groups: dict[str, pd.DataFrame] = (
         {code: g for code, g in sku_lookup.groupby("product_code", sort=False)}
         if not sku_lookup.empty else {}
     )
@@ -433,7 +441,12 @@ def generate_wave_pick_sheets(
                 qty = float(getattr(line, "quantity", 0) or 0)
                 if not code or qty <= 0:
                     continue
-                pick_uom = str(getattr(line, "pick_uom", "") or PICK_UOM_EACH)
+                raw_uom = getattr(line, "pick_uom", None)
+                pick_uom = (
+                    str(raw_uom) if pd.notna(raw_uom) and str(raw_uom) in (
+                        PICK_UOM_CARTON, PICK_UOM_EACH)
+                    else PICK_UOM_EACH
+                )
                 qty_eaches = getattr(line, "qty_eaches", None)
                 base = {
                     "so_id": sid,
@@ -449,6 +462,7 @@ def generate_wave_pick_sheets(
                     order_rows.append({
                         **base,
                         "location": "UNALLOCATED",
+                        "location_qty": pd.NA,
                         "aisle": pd.NA, "bay": pd.NA,
                         "level": pd.NA, "sublevel": pd.NA,
                         "unallocated": True,
@@ -465,6 +479,7 @@ def generate_wave_pick_sheets(
                 order_rows.append({
                     **base,
                     "location": loc_row.get("location"),
+                    "location_qty": loc_row.get("qty"),
                     "aisle": loc_row.get("aisle"),
                     "bay": loc_row.get("bay"),
                     "level": loc_row.get("level"),
@@ -516,10 +531,9 @@ def generate_wave_pick_sheets(
             sublevel=("sublevel", "first"),
             qty_cartons=("quantity", "sum"),
             qty_eaches=("qty_eaches", lambda s: (
-                int(pd.to_numeric(s, errors="coerce").sum())
-                if pd.to_numeric(s, errors="coerce").notna().any()
-                else pd.NA
-            )),
+                lambda v: int(v.sum()) if v.notna().any() else pd.NA
+            )(pd.to_numeric(s, errors="coerce"))),
+            location_qty=("location_qty", "first"),
             contributing_so_refs=("so_ref", lambda s: ", ".join(
                 sorted({x for x in s if x})
             )),
@@ -528,8 +542,21 @@ def generate_wave_pick_sheets(
             qty_short=("qty_short", "max"),
         ).reset_index()
 
+        # qty_short must hold for the CONSOLIDATED pick, not just each
+        # contributing line — several orders can jointly overrun a reserve.
+        loc_qty = pd.to_numeric(consolidated["location_qty"], errors="coerce")
+        needed = pd.to_numeric(consolidated["qty_eaches"], errors="coerce")
+        consolidated["qty_short"] = consolidated["qty_short"] | (
+            (consolidated["pick_uom"] == PICK_UOM_CARTON)
+            & loc_qty.notna() & needed.notna() & (needed > loc_qty)
+        )
+
         consolidated = _walk_sort_key(consolidated, aisle_walk_order)
         consolidated.insert(0, "walk_index", range(1, len(consolidated) + 1))
+        # NOTE: cartons_running_total mixes CTN counts and loose-each counts
+        # post-split. Closer to physical cartons than the old raw-each sum,
+        # but still approximate where EA remainders ride the wave — display
+        # layer (Task 4 / PDF) should not present it as an exact carton count.
         consolidated["cartons_running_total"] = (
             consolidated["qty_cartons"].cumsum().astype(int)
         )
@@ -586,6 +613,7 @@ def generate_wave_pick_sheets(
         for code in s.pick_lines.loc[
             s.pick_lines["unallocated"].fillna(False), "product_code"]
     })
+    # counts consolidated pick rows, not raw order lines
     n_lines_carton_pick = sum(
         int((s.pick_lines["pick_uom"] == PICK_UOM_CARTON).sum())
         for s in sheets if "pick_uom" in s.pick_lines.columns

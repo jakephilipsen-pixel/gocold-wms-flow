@@ -141,3 +141,72 @@ def test_legacy_frames_without_uom_or_role_still_work():
     assert row["pick_uom"] == "EA"
     assert row["qty_cartons"] == 5
     assert res.summary["n_lines_carton_pick"] == 0
+
+
+def test_consolidated_overrun_flags_qty_short():
+    """Two orders individually fit the reserve but jointly overrun it."""
+    per_order = pd.DataFrame([_order_row(1, "SO-A"), _order_row(2, "SO-B")])
+    so_lines = pd.DataFrame([
+        dict(_line("FD-BAR", 16, "CTN", 96), so_id=1),
+        dict(_line("FD-BAR", 16, "CTN", 96), so_id=2),
+    ])
+    res = generate_wave_pick_sheets(
+        classification=_classification(per_order),
+        so_lines=so_lines, sku_locations=_sku_locations(),
+        early_release_cartons=10_000,
+    )
+    picks = res.sheets[0].pick_lines
+    assert len(picks) == 1                     # consolidated to one row
+    assert picks.iloc[0]["qty_eaches"] == 192  # 120-ea reserve overrun
+    assert bool(picks.iloc[0]["qty_short"]) is True
+
+
+def test_reserve_tiebreak_prefers_walk_order():
+    """Equal qty reserves: first in (already sorted) walk order wins."""
+    locs = pd.DataFrame([
+        {"product_code": "T", "location": "AA-01-03", "aisle": "AA", "bay": 1,
+         "level": 3, "sublevel": None, "role": "reserve", "qty": 50},
+        {"product_code": "T", "location": "AB-09-03", "aisle": "AB", "bay": 9,
+         "level": 3, "sublevel": None, "role": "reserve", "qty": 50},
+    ])
+    per_order = pd.DataFrame([_order_row(1, "SO-A")])
+    res = generate_wave_pick_sheets(
+        classification=_classification(per_order),
+        so_lines=pd.DataFrame([_line("T", 2, "CTN", 12)]),
+        sku_locations=locs, early_release_cartons=10_000,
+    )
+    assert res.sheets[0].pick_lines.iloc[0]["location"] == "AA-01-03"
+
+
+def test_all_nan_reserve_qty_routes_deterministically():
+    """No SOH qty knowledge: first reserve in walk order, no qty_short."""
+    locs = pd.DataFrame([
+        {"product_code": "T", "location": "AA-01-03", "aisle": "AA", "bay": 1,
+         "level": 3, "sublevel": None, "role": "reserve", "qty": None},
+        {"product_code": "T", "location": "AB-09-03", "aisle": "AB", "bay": 9,
+         "level": 3, "sublevel": None, "role": "reserve", "qty": None},
+    ])
+    per_order = pd.DataFrame([_order_row(1, "SO-A")])
+    res = generate_wave_pick_sheets(
+        classification=_classification(per_order),
+        so_lines=pd.DataFrame([_line("T", 2, "CTN", 12)]),
+        sku_locations=locs, early_release_cartons=10_000,
+    )
+    row = res.sheets[0].pick_lines.iloc[0]
+    assert row["location"] == "AA-01-03"
+    assert bool(row["qty_short"]) is False
+
+
+def test_nan_pick_uom_clamps_to_ea():
+    """A NaN hole in pick_uom must not become the string 'nan'."""
+    so_lines = pd.DataFrame([
+        {"so_id": 1, "product_code": "FD-BAR", "product_name": "Bar",
+         "quantity": 5, "pick_uom": float("nan"), "qty_eaches": pd.NA},
+    ])
+    per_order = pd.DataFrame([_order_row(1, "SO-A")])
+    res = generate_wave_pick_sheets(
+        classification=_classification(per_order),
+        so_lines=so_lines, sku_locations=_sku_locations(),
+        early_release_cartons=10_000,
+    )
+    assert res.sheets[0].pick_lines.iloc[0]["pick_uom"] == "EA"
