@@ -85,3 +85,44 @@ def test_other_columns_survive_the_split():
     out = split_lines(lines, _dims([("FD-BAR", 6)]))
     assert set(out["so_ref"]) == {"SO-77"}
     assert set(out["batch"]) == {"B1"}
+
+
+def test_fractional_quantity_is_not_converted_and_nothing_is_lost():
+    """qty=24.5 @ ipq=6 must NOT silently drop 0.5 EA — line passes through."""
+    out = split_lines(_lines([(1, "FD-BAR", "Bar", 24.5)]), _dims([("FD-BAR", 6)]))
+    assert len(out) == 1
+    assert out.iloc[0]["pick_uom"] == PICK_UOM_EACH
+    assert out.iloc[0]["quantity"] == 24.5
+
+
+def test_fractional_inner_pack_qty_is_not_converted():
+    out = split_lines(_lines([(1, "FD-BAR", "Bar", 27)]), _dims([("FD-BAR", 6.4)]))
+    assert len(out) == 1
+    assert out.iloc[0]["pick_uom"] == PICK_UOM_EACH
+
+
+def test_each_conservation_across_the_split():
+    """Invariant: total eaches in == CTN qty_eaches + EA quantities out."""
+    lines = _lines([
+        (1, "FD-BAR", "Bar", 27),    # 4 CTN (24) + 3 EA
+        (1, "TSP-SAR", "Sar", 8),    # 2 CTN (8)
+        (1, "FRG-01", "Oats", 9),    # passthrough EA
+    ])
+    out = split_lines(lines, _dims([("FD-BAR", 6), ("TSP-SAR", 4), ("FRG-01", 1)]))
+    eaches_out = (
+        out.loc[out["pick_uom"] == PICK_UOM_CARTON, "qty_eaches"].sum()
+        + out.loc[out["pick_uom"] == PICK_UOM_EACH, "quantity"].sum()
+    )
+    assert eaches_out == 27 + 8 + 9
+
+
+def test_input_row_order_is_preserved():
+    """Converted lines stay in place; the EA remainder follows its CTN line."""
+    lines = _lines([
+        (1, "AAA-01", "A", 2),       # passthrough
+        (1, "FD-BAR", "Bar", 27),    # splits in place: CTN then EA
+        (1, "ZZZ-09", "Z", 3),       # passthrough
+    ])
+    out = split_lines(lines, _dims([("FD-BAR", 6)]))
+    assert list(out["product_code"]) == ["AAA-01", "FD-BAR", "FD-BAR", "ZZZ-09"]
+    assert list(out["pick_uom"]) == ["EA", "CTN", "EA", "EA"]
