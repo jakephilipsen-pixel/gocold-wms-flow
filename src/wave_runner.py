@@ -99,14 +99,14 @@ class RunResult:
 ProgressCallback = Callable[[ProgressEvent], None]
 
 # ---------------------------------------------------------------------------
-# SOH → pick-face lookup helper
+# SOH → SKU location helpers
 # ---------------------------------------------------------------------------
 
 _SKU_LOC_COLS = ["product_code", "location", "aisle", "bay", "level", "sublevel"]
 
 _SKU_CAND_COLS = [
     "product_code", "location", "aisle", "bay", "level", "sublevel",
-    "role", "qty",
+    "role", "qty", "uom",
 ]
 
 
@@ -118,10 +118,11 @@ def build_sku_location_candidates(items: list[dict]) -> pd.DataFrame:
     is 'pick_face' or 'reserve' — grammar-unknown names collapse to
     'reserve' (if it isn't a known pick face, treat it as forklift
     territory). ``qty`` is the SOH stock figure for that (SKU, location)
-    bucket in the customer's ordering UOM (eaches for Forage).
+    bucket in the bucket's reported UOM — eaches for Forage; ``uom``
+    carries the SOH label for auditability.
     """
     if not items:
-        return pd.DataFrame(columns=_SKU_CAND_COLS)
+        return pd.DataFrame(columns=_SKU_CAND_COLS).astype({"qty": "float64"})
 
     candidates: list[dict] = []
     for it in items:
@@ -139,15 +140,17 @@ def build_sku_location_candidates(items: list[dict]) -> pd.DataFrame:
             "level": info.level,
             "sublevel": info.sublevel,
             "role": "pick_face" if is_pick_face else "reserve",
-            "qty": pd.to_numeric(it.get("qty"), errors="coerce"),
+            "qty": it.get("qty"),
+            "uom": it.get("uom_name"),
             "_role_rank": 0 if is_pick_face else 1,
             "position": info.position,
         })
 
     if not candidates:
-        return pd.DataFrame(columns=_SKU_CAND_COLS)
+        return pd.DataFrame(columns=_SKU_CAND_COLS).astype({"qty": "float64"})
 
     df = pd.DataFrame(candidates)
+    df["qty"] = pd.to_numeric(df["qty"], errors="coerce").astype("float64")
     df = df.sort_values(
         ["product_code", "_role_rank", "position",
          "aisle", "bay", "level", "sublevel"],
@@ -162,7 +165,8 @@ def build_sku_locations_from_soh(items: list[dict]) -> pd.DataFrame:
 
     Thin wrapper over ``build_sku_location_candidates`` kept for callers
     that only want the single-location view (selection rules documented
-    there). Returns ``_SKU_LOC_COLS`` — one row per SKU.
+    there). Returns the six location columns (product_code, location,
+    aisle, bay, level, sublevel — no role/qty) — one row per SKU.
     """
     cands = build_sku_location_candidates(items)
     if cands.empty:
