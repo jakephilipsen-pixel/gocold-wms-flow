@@ -101,14 +101,14 @@ def test_unallocated_values_correct_in_picks_csv(tmp_path: Path) -> None:
     assert unalloc_row["location"] == "UNALLOCATED"
 
 
-def test_picks_csv_column_order_ends_with_unallocated(tmp_path: Path) -> None:
-    """unallocated should be the final column in picks.csv."""
+def test_picks_csv_column_order_ends_with_qty_short(tmp_path: Path) -> None:
+    """qty_short should be the final column in picks.csv."""
     sheet = _make_sheet()
     paths = write_wave_csvs(sheet, tmp_path)
 
     result = pd.read_csv(paths.picks)
-    assert result.columns[-1] == "unallocated", (
-        f"Expected 'unallocated' as last column; got '{result.columns[-1]}'"
+    assert result.columns[-1] == "qty_short", (
+        f"Expected 'qty_short' as last column; got '{result.columns[-1]}'"
     )
 
 
@@ -123,3 +123,34 @@ def test_picks_csv_no_crash_when_unallocated_absent(tmp_path: Path) -> None:
     # Column present (reindex adds it), all values are NaN.
     assert "unallocated" in result.columns
     assert result["unallocated"].isna().all()
+
+
+def test_picks_csv_carries_carton_columns(tmp_path: Path) -> None:
+    """pick_uom, qty_eaches, reserve_unavailable and qty_short survive into
+    picks.csv when the frame carries those columns."""
+    pick_lines = pd.DataFrame([
+        {"walk_index": 1, "location": "AB-04-03", "aisle": "AB", "bay": 4,
+         "level": 3, "sublevel": None, "product_code": "FD-BAR",
+         "product_name": "Choc Bar 6pk", "pick_uom": "CTN",
+         "qty_cartons": 4, "qty_eaches": 24, "cartons_running_total": 4,
+         "contributing_so_refs": "SO-1", "unallocated": False,
+         "reserve_unavailable": False, "qty_short": False},
+    ])
+    orders = pd.DataFrame([
+        {"so_ref": "SO-1", "customer_name": "Forage",
+         "delivery_company": "Shop", "delivery_suburb": "Scoresby",
+         "delivery_state": "VIC", "delivery_postcode": "3179",
+         "cartons": 4, "lines": 1},
+    ])
+    sheet = WavePickSheet(
+        wave_id="W-CTN", stream="3_wave_bench", run_group="VIC",
+        receive_date=None, orders=orders, pick_lines=pick_lines,
+        total_cartons=4, total_lines=1, estimated_walk_distance_m=5.0,
+    )
+    paths = write_wave_csvs(sheet, tmp_path)
+    out = pd.read_csv(paths.picks)
+    assert "pick_uom" in out.columns
+    assert out.iloc[0]["pick_uom"] == "CTN"
+    assert out.iloc[0]["qty_eaches"] == 24
+    assert "reserve_unavailable" in out.columns
+    assert "qty_short" in out.columns

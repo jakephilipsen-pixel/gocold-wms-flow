@@ -54,3 +54,36 @@ def test_unallocated_block_adds_content(tmp_path):
     generate_wave_pdf(s2, smaller)
 
     assert full.stat().st_size > smaller.stat().st_size
+
+
+def test_pdf_renders_carton_pick_lines(tmp_path):
+    """PDF renders CTN pick lines with each-equivalents and reserve flags."""
+    pick_lines = pd.DataFrame([
+        {"walk_index": 1, "location": "AB-04-03", "aisle": "AB", "bay": 4,
+         "level": 3, "sublevel": None, "product_code": "FD-BAR",
+         "product_name": "Choc Bar 6pk", "pick_uom": "CTN",
+         "qty_cartons": 4, "qty_eaches": 24, "cartons_running_total": 4,
+         "contributing_so_refs": "SO-1", "unallocated": False,
+         "reserve_unavailable": True, "qty_short": False},
+        {"walk_index": 2, "location": "AA-01-01", "aisle": "AA", "bay": 1,
+         "level": 1, "sublevel": None, "product_code": "FD-BAR",
+         "product_name": "Choc Bar 6pk", "pick_uom": "EA",
+         "qty_cartons": 3, "qty_eaches": pd.NA, "cartons_running_total": 7,
+         "contributing_so_refs": "SO-1", "unallocated": False,
+         "reserve_unavailable": False, "qty_short": False},
+    ])
+    orders = pd.DataFrame([
+        {"so_ref": "SO-1", "customer_name": "Forage",
+         "delivery_company": "Shop", "delivery_suburb": "Scoresby",
+         "delivery_state": "VIC", "delivery_postcode": "3179",
+         "cartons": 7, "lines": 2},
+    ])
+    sheet = WavePickSheet(
+        wave_id="W-CTN", stream="3_wave_bench", run_group="VIC",
+        receive_date=None, orders=orders, pick_lines=pick_lines,
+        total_cartons=7, total_lines=2, estimated_walk_distance_m=10.0,
+    )
+    out = tmp_path / "w.pdf"
+    generate_wave_pdf(sheet, out)
+    assert out.exists()
+    assert out.stat().st_size > 1000
