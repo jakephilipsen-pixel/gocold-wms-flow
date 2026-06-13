@@ -8,6 +8,8 @@ secrets/*.txt
 data/raw/
 data/processed/
 data/cache/
+# generated ZPL/label artifacts (SKU codes + product names)
+data/labels/
 *.parquet
 *.csv.gz
 
