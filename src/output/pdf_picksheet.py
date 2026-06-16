@@ -372,6 +372,37 @@ def _esc(text) -> str:
     )
 
 
+def _flag(value) -> bool:
+    """NA/NaN-safe truthiness for pick-line flag columns (a CSV
+    round-trip turns absent bools into float NaN, which is truthy)."""
+    return bool(pd.notna(value) and value)
+
+
+def _qty_and_loc_html(r) -> tuple[str, str]:
+    """Qty + location cell markup for one pick-line row.
+
+    CTN lines render as "N CTN" with a small "(M EA)" sub-line; flagged
+    locations gain small warning markers. Rows without the carton-aware
+    columns (legacy frames) render exactly as before.
+    """
+    pick_uom = str(getattr(r, "pick_uom", "") or "")
+    qty_eaches = getattr(r, "qty_eaches", None)
+    if pick_uom == "CTN":
+        eaches = (
+            f"<br/><font size=7>({int(qty_eaches)} EA)</font>"
+            if pd.notna(qty_eaches) else ""
+        )
+        qty_html = f"<b>{int(r.qty_cartons):,} CTN</b>{eaches}"
+    else:
+        qty_html = f"<b>{int(r.qty_cartons):,}</b>"
+    loc_html = _esc(r.location)
+    if _flag(getattr(r, "reserve_unavailable", False)):
+        loc_html += "<br/><font size=6>NO RESERVE — PICK FACE</font>"
+    if _flag(getattr(r, "qty_short", False)):
+        loc_html += "<br/><font size=6>CHECK QTY AT LOCATION</font>"
+    return qty_html, loc_html
+
+
 def _wrap_cell(
     html: str, font: str | None = None, size: int = 9,
     align: str = "left",
@@ -407,20 +438,16 @@ def _pick_lines_table(pick_lines: pd.DataFrame) -> Table:
     ]
     rows = [header]
     for r in pick_lines.itertuples(index=False):
+        qty_html, loc_html = _qty_and_loc_html(r)
         rows.append([
             _wrap_cell(
                 f"<b>{int(r.walk_index)}</b>",
                 THEME.body_font_bold, 12, "center",
             ),
-            _wrap_cell(
-                _esc(r.location), THEME.mono_font, 11, "center",
-            ),
+            _wrap_cell(loc_html, THEME.mono_font, 11, "center"),
             _wrap_cell(_esc(r.product_code), THEME.body_font_bold, 9),
             _wrap_cell(_esc(r.product_name), THEME.body_font, 9),
-            _wrap_cell(
-                f"<b>{int(r.qty_cartons):,}</b>",
-                THEME.body_font_bold, 13, "center",
-            ),
+            _wrap_cell(qty_html, THEME.body_font_bold, 13, "center"),
             _wrap_cell(
                 f"{int(r.cartons_running_total):,}",
                 THEME.body_font, 9, "center",
@@ -433,8 +460,8 @@ def _pick_lines_table(pick_lines: pd.DataFrame) -> Table:
         13 * mm,  # walk #
         26 * mm,  # location
         22 * mm,  # sku
-        46 * mm,  # description
-        14 * mm,  # qty
+        40 * mm,  # description
+        20 * mm,  # qty
         16 * mm,  # run total
         40 * mm,  # orders
         12 * mm,  # done
@@ -493,28 +520,24 @@ def _unallocated_table(pick_lines: pd.DataFrame) -> Table:
     header = [Paragraph(label, header_white_style) for label in col_labels]
     rows = [header]
     for r in pick_lines.itertuples(index=False):
+        qty_html, loc_html = _qty_and_loc_html(r)
         rows.append([
-            _wrap_cell(
-                _esc(r.location), THEME.mono_font, 11, "center",
-            ),
+            _wrap_cell(loc_html, THEME.mono_font, 11, "center"),
             _wrap_cell(_esc(r.product_code), THEME.body_font_bold, 9),
             _wrap_cell(_esc(r.product_name), THEME.body_font, 9),
-            _wrap_cell(
-                f"<b>{int(r.qty_cartons):,}</b>",
-                THEME.body_font_bold, 13, "center",
-            ),
+            _wrap_cell(qty_html, THEME.body_font_bold, 13, "center"),
             _wrap_cell(_esc(r.contributing_so_refs), THEME.body_font, 8),
             _wrap_cell("", THEME.body_font, 9),
         ])
 
     # Widths sum to 189mm — same total as _pick_lines_table (189mm).
     # The freed "Walk #" (13mm) + "Run total" (16mm) = 29mm is spread
-    # across Description (+17mm) and Orders (+12mm).
+    # across Description (+11mm) and Orders (+12mm); qty gains 6mm.
     col_widths = [
         26 * mm,   # col 0 — location
         22 * mm,   # col 1 — sku
-        63 * mm,   # col 2 — description  (46+17)
-        14 * mm,   # col 3 — qty
+        57 * mm,   # col 2 — description  (46+11)
+        20 * mm,   # col 3 — qty
         52 * mm,   # col 4 — orders       (40+12)
         12 * mm,   # col 5 — done
     ]

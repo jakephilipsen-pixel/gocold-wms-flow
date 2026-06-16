@@ -5,6 +5,7 @@ from .patterns import OrderPatterns, compute_order_patterns
 from .zoning import ZoningResult, compute_zoning
 from .destinations import DestinationAnalysis, compute_destinations
 from .dim_loader import load_dimensions
+from .carton_split import PICK_UOM_CARTON, PICK_UOM_EACH, split_lines
 from .tagging import apply_tags, FULL_PALLET_BRANDS
 from .full_pallet import (
     FullPalletAnalysis,
@@ -53,6 +54,7 @@ __all__ = [
     "ZoningResult", "compute_zoning",
     "DestinationAnalysis", "compute_destinations",
     "load_dimensions",
+    "PICK_UOM_CARTON", "PICK_UOM_EACH", "split_lines",
     "apply_tags", "FULL_PALLET_BRANDS",
     "FullPalletAnalysis", "run_full_pallet_analysis", "DEFAULT_FULL_PALLET_RATIO",
     "FLAGGED_DISPATCH", "find_latest_dispatch_plan",

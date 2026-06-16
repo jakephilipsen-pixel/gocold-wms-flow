@@ -15,8 +15,20 @@
         <th>Run tot</th><th>Contributing SOs</th></tr>
     {% for p in wave.pick_lines %}
     <tr>
-      <td>{{ p.walk_index }}</td><td>{{ p.location }}</td><td>{{ p.product_code }}</td>
-      <td>{{ p.product_name }}</td><td>{{ p.qty_cartons }}</td>
+      <td>{{ p.walk_index }}</td>
+      <td>{{ p.location }}
+        {% if p.reserve_unavailable in (True, "True") %}<span class="pill warn">NO RESERVE</span>{% endif %}
+        {% if p.qty_short in (True, "True") %}<span class="pill warn">CHECK QTY</span>{% endif %}
+      </td>
+      <td>{{ p.product_code }}</td>
+      <td>{{ p.product_name }}</td>
+      <td>
+        {% if p.pick_uom == "CTN" %}
+          {{ p.qty_cartons }} CTN{% if p.qty_eaches != "" %} ({{ p.qty_eaches|int }} EA){% endif %}
+        {% else %}
+          {{ p.qty_cartons }}
+        {% endif %}
+      </td>
       <td>{{ p.cartons_running_total }}</td><td>{{ p.contributing_so_refs }}</td>
     </tr>
     {% endfor %}

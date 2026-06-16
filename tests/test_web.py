@@ -255,3 +255,83 @@ def test_run_detail_surfaces_skus_to_measure(tmp_path, client):
     assert r.status_code == 200
     assert "SKUs to measure" in r.text
     assert "FRG-0001" in r.text and "FRG-0002" in r.text
+
+
+def test_index_form_has_min_full_cartons(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    assert 'name="min_full_cartons"' in r.text
+
+
+def test_post_runs_passes_min_full_cartons(tmp_path):
+    from fastapi.testclient import TestClient
+    import web.app as appmod
+    from wave_runner import RunResult
+
+    seen = {}
+
+    def fake_run(settings, progress):
+        seen["min_full_cartons"] = settings.min_full_cartons
+        return RunResult("r", tmp_path, {"n_waves": 0}, "empty")
+
+    app = appmod.create_app(repo_root=tmp_path)
+    app.state.manager._runner = fake_run
+    client = TestClient(app)
+    client.post("/runs", data={
+        "status": "X", "customer_name": "",
+        "pallet_fraction_threshold": "0.51", "early_release_cartons": "30",
+        "run_group_col": "delivery_state", "min_full_cartons": "2"})
+    import time
+    for _ in range(50):  # job thread — poll instead of a fixed sleep
+        if "min_full_cartons" in seen:
+            break
+        time.sleep(0.02)
+    assert seen["min_full_cartons"] == 2
+
+
+def test_wave_detail_shows_uom_and_flags(tmp_path, client):
+    """CTN rows render qty as 'N CTN (M EA)' plus flag badges; the old
+    each-row from _make_run still renders its bare qty unchanged."""
+    base = tmp_path / "data" / "processed" / "waves"
+    run = _make_run(base, "20260611_100000")
+    pd.DataFrame([
+        {"walk_index": 1, "location": "AA-01-03", "product_code": "FRG-0042",
+         "product_name": "Oats", "pick_uom": "CTN", "qty_cartons": 3,
+         "qty_eaches": 36.0, "cartons_running_total": 3,
+         "contributing_so_refs": "SO-1", "unallocated": False,
+         "reserve_unavailable": True, "qty_short": False},
+        {"walk_index": 2, "location": "AA-01-01", "product_code": "FRG-0099",
+         "product_name": "Bars", "pick_uom": "EA", "qty_cartons": 2,
+         "qty_eaches": None, "cartons_running_total": 5,
+         "contributing_so_refs": "SO-2", "unallocated": False,
+         "reserve_unavailable": False, "qty_short": True},
+    ]).to_csv(run / "VIC-bench-01" / "VIC-bench-01_picks.csv", index=False)
+    r = client.get("/runs/20260611_100000/waves/VIC-bench-01")
+    assert r.status_code == 200
+    assert "3 CTN (36 EA)" in r.text
+    assert "NO RESERVE" in r.text
+    assert "CHECK QTY" in r.text
+
+
+def test_run_detail_shows_carton_pick_stat(tmp_path, client):
+    base = tmp_path / "data" / "processed" / "waves"
+    run = _make_run(base, "20260611_090000")
+    manifest = json.loads((run / "manifest.json").read_text())
+    manifest["summary"]["n_lines_carton_pick"] = 4
+    manifest["summary"]["n_carton_picks_no_reserve"] = 1
+    (run / "manifest.json").write_text(json.dumps(manifest))
+    r = client.get("/runs/20260611_090000")
+    assert r.status_code == 200
+    assert "Carton picks" in r.text
+
+
+def test_list_runs_surfaces_carton_counts(tmp_path):
+    from web.runs import list_runs
+    run = _make_run(tmp_path, "20260611_090000")
+    manifest = json.loads((run / "manifest.json").read_text())
+    manifest["summary"]["n_lines_carton_pick"] = 4
+    manifest["summary"]["n_carton_picks_no_reserve"] = 1
+    (run / "manifest.json").write_text(json.dumps(manifest))
+    runs = list_runs(tmp_path)
+    assert runs[0]["n_lines_carton_pick"] == 4
+    assert runs[0]["n_carton_picks_no_reserve"] == 1

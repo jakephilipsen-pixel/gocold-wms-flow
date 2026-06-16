@@ -26,6 +26,7 @@ from analysis import (
     DEFAULT_FULL_PALLET_RATIO,
     DEFAULT_LINES_PER_HOUR,
     DEFAULT_PALLET_FRACTION_THRESHOLD,
+    PICK_UOM_CARTON,
     apply_tags,
     attach_dispatch_runs,
     classify_streams,
@@ -38,6 +39,7 @@ from analysis import (
     load_dispatch_link,
     load_latest,
     run_full_pallet_analysis,
+    split_lines,
 )
 from analysis.loaders import Snapshot
 from cc_client import (
@@ -46,6 +48,7 @@ from cc_client import (
     get_sku_locations,
     search_outbound_orders,
 )
+from locations.cc_loader import load_cc_locations
 from locations.grammar import parse_location_name
 from output import generate_wave_pdf, write_wave_csvs
 
@@ -65,6 +68,7 @@ class WaveRunSettings:
     pallet_fraction_threshold: float = DEFAULT_PALLET_FRACTION_THRESHOLD
     early_release_cartons: int = DEFAULT_EARLY_RELEASE_CARTONS
     run_group_col: str = "predicted_run"
+    min_full_cartons: int = 1
     lines_per_hour: int = DEFAULT_LINES_PER_HOUR
     pallet_ratio: float = DEFAULT_FULL_PALLET_RATIO
     # Optional explicit paths; None = resolve from repo_root at run time.
@@ -99,32 +103,43 @@ class RunResult:
 ProgressCallback = Callable[[ProgressEvent], None]
 
 # ---------------------------------------------------------------------------
-# SOH → pick-face lookup helper
+# SOH → SKU location helpers
 # ---------------------------------------------------------------------------
 
 _SKU_LOC_COLS = ["product_code", "location", "aisle", "bay", "level", "sublevel"]
 
+_SKU_CAND_COLS = [
+    "product_code", "location", "aisle", "bay", "level", "sublevel",
+    "role", "qty", "uom",
+]
 
-def build_sku_locations_from_soh(items: list[dict]) -> pd.DataFrame:
-    """Collapse live SOH rows into one pick-face location per SKU.
 
-    ``items`` are the dicts returned by ``cc_client.get_sku_locations``
-    (``product_code``, ``location_name``, ``location_id``, ``qty``, ``uom``).
-    Each location name is parsed through the warehouse grammar to recover
-    walk-order structure (aisle/bay/level/sublevel) and pick-face role.
+def build_sku_location_candidates(
+    items: list[dict],
+    location_roles: dict[str, bool] | None = None,
+) -> pd.DataFrame:
+    """Every live SOH location per SKU, best-first within each SKU.
 
-    Selection per SKU (best first):
-      1. pick faces before reserve/unknown,
-      2. lowest grammar position (1 before 2),
-      3. walk order (aisle, bay, level, sublevel).
+    Per-SKU ordering mirrors the old single-pick selection: pick faces
+    before reserve, lowest grammar position, then walk order. ``role``
+    is 'pick_face' or 'reserve', resolved export-first:
 
-    A SKU with only reserve locations still resolves to its best reserve —
-    that is a real, live location, not ``unallocated``. Returns columns
-    ``product_code, location, aisle, bay, level, sublevel`` (one row per SKU).
+    - ``location_roles`` (location_name → is_pick_face from the CC
+      locations export, ``efficiency >= 21``) is AUTHORITATIVE for any
+      location it names;
+    - locations absent from the export fall back to the grammar parse
+      (``role_by_grammar == "pick_face"``);
+    - still-unknown names collapse to 'reserve' (if it isn't a known
+      pick face, treat it as forklift territory).
+
+    ``qty`` is the SOH stock figure for that (SKU, location) bucket in
+    the bucket's reported UOM — eaches for Forage; ``uom`` carries the
+    SOH label for auditability.
     """
     if not items:
-        return pd.DataFrame(columns=_SKU_LOC_COLS)
+        return pd.DataFrame(columns=_SKU_CAND_COLS).astype({"qty": "float64"})
 
+    roles = location_roles or {}
     candidates: list[dict] = []
     for it in items:
         code = it.get("product_code")
@@ -132,7 +147,10 @@ def build_sku_locations_from_soh(items: list[dict]) -> pd.DataFrame:
         if not code or not name:
             continue
         info = parse_location_name(name)
-        role_rank = 0 if info.role_by_grammar == "pick_face" else 1
+        if name in roles:
+            is_pick_face = bool(roles[name])
+        else:
+            is_pick_face = info.role_by_grammar == "pick_face"
         candidates.append({
             "product_code": code,
             "location": name,
@@ -140,21 +158,42 @@ def build_sku_locations_from_soh(items: list[dict]) -> pd.DataFrame:
             "bay": info.bay,
             "level": info.level,
             "sublevel": info.sublevel,
-            "_role_rank": role_rank,
-            "position": info.position,  # None stays None; sorts last via na_position
+            "role": "pick_face" if is_pick_face else "reserve",
+            "qty": it.get("qty"),
+            "uom": it.get("uom_name"),
+            "_role_rank": 0 if is_pick_face else 1,
+            "position": info.position,
         })
 
     if not candidates:
-        return pd.DataFrame(columns=_SKU_LOC_COLS)
+        return pd.DataFrame(columns=_SKU_CAND_COLS).astype({"qty": "float64"})
 
     df = pd.DataFrame(candidates)
+    df["qty"] = pd.to_numeric(df["qty"], errors="coerce").astype("float64")
     df = df.sort_values(
-        ["product_code", "_role_rank", "position", "aisle", "bay", "level", "sublevel"],
+        ["product_code", "_role_rank", "position",
+         "aisle", "bay", "level", "sublevel"],
         kind="mergesort",
         na_position="last",
+    ).reset_index(drop=True)
+    return df[_SKU_CAND_COLS]
+
+
+def build_sku_locations_from_soh(items: list[dict]) -> pd.DataFrame:
+    """Collapse live SOH rows into one best location per SKU.
+
+    Thin wrapper over ``build_sku_location_candidates`` kept for callers
+    that only want the single-location view (selection rules documented
+    there). Returns the six location columns (product_code, location,
+    aisle, bay, level, sublevel — no role/qty) — one row per SKU.
+    """
+    cands = build_sku_location_candidates(items)
+    if cands.empty:
+        return pd.DataFrame(columns=_SKU_LOC_COLS)
+    return (
+        cands.drop_duplicates("product_code", keep="first")
+        .reset_index(drop=True)[_SKU_LOC_COLS]
     )
-    best = df.drop_duplicates("product_code", keep="first").reset_index(drop=True)
-    return best[_SKU_LOC_COLS]
 
 
 # ---------------------------------------------------------------------------
@@ -200,6 +239,23 @@ def _latest_file(dirpath: Path, pattern: str) -> Path | None:
         reverse=True,
     )
     return candidates[0] if candidates else None
+
+
+def _load_location_roles(repo_root: Path) -> dict[str, bool] | None:
+    """location_name -> is_pick_face from the latest CC locations export.
+
+    Returns None when no export exists — candidates then fall back to
+    grammar-only roles (the pre-export behaviour)."""
+    export_path = _latest_file(repo_root / "data" / "locations", "*.xlsx")
+    if export_path is None:
+        return None
+    try:
+        locs = load_cc_locations(export_path)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("failed to load CC locations export %s: %s — falling "
+                    "back to grammar-only roles", export_path, exc)
+        return None
+    return dict(zip(locs["location_name"], locs["is_pick_face"].astype(bool)))
 
 
 def _pull_open_orders(
@@ -270,6 +326,7 @@ def _build_index_md(
         f"- Customer filter: `{cfg['customer_name'] or '(none)'}`",
         f"- pallet_fraction_threshold: {cfg['pallet_fraction_threshold']:.2f}",
         f"- early_release_cartons: {cfg['early_release_cartons']}",
+        f"- min_full_cartons: {cfg['min_full_cartons']}",
         f"- run_group_col: `{cfg['run_group_col']}`",
         f"- Pick rate assumption: {cfg['lines_per_hour']} lines/hour",
         "",
@@ -341,6 +398,7 @@ def _settings_dict(settings, audit_path, resolved_plan_dir=None):
         "pallet_fraction_threshold": settings.pallet_fraction_threshold,
         "early_release_cartons": settings.early_release_cartons,
         "run_group_col": settings.run_group_col,
+        "min_full_cartons": settings.min_full_cartons,
         "dispatch_plan_dir": str(plan_dir) if plan_dir else None,
         "include_pallet_sheets": settings.include_pallet_sheets,
         "lines_per_hour": settings.lines_per_hour,
@@ -451,6 +509,16 @@ def run_wave_generation(
             level="ok")
 
         # 6. live SKU -> location from stock-on-hand (mandatory, fresh).
+        # Location roles come from the CC locations export when present
+        # (authoritative); grammar is the fallback for absent names.
+        location_roles = _load_location_roles(repo_root)
+        if location_roles is not None:
+            emit("locations",
+                 f"CC location roles loaded for {len(location_roles)} "
+                 f"locations", level="ok")
+        else:
+            emit("locations", "no CC locations export — using grammar-only "
+                              "roles")
         emit("locations", "pulling live stock-on-hand for SKU locations…")
         codes = sorted({c for c in so_lines["product_code"].dropna().unique()})
         soh_customer_id = (so_lines.iloc[0]["customer_id"]
@@ -462,19 +530,30 @@ def run_wave_generation(
                 "locations available; refusing to wave from stale data")
         items = get_sku_locations(
             client, customer_id=soh_customer_id, product_codes=codes)
-        sku_locations = build_sku_locations_from_soh(items)
+        sku_locations = build_sku_location_candidates(
+            items, location_roles=location_roles)
         if sku_locations.empty:
             raise CartonCloudError(
                 "live SOH returned no SKU locations — refusing to generate a "
                 "wave with nothing placed")
         emit("locations",
-             f"live SOH resolved {len(sku_locations)} SKU locations "
+             f"live SOH resolved {sku_locations['product_code'].nunique()} "
+             f"SKUs across {sku_locations['location'].nunique()} locations "
              f"({len(items)} stock rows)", level="ok")
 
-        # 7. wave generation
+        # 7. wave generation (each→carton split first: combo-SKU lines
+        # spanning full cartons become CTN picks routed to reserve).
         emit("generate", "generating wave pick sheets…")
+        wave_so_lines = split_lines(
+            snap.so_lines, dims, min_full_cartons=settings.min_full_cartons)
+        n_ctn_lines = int((wave_so_lines["pick_uom"] == PICK_UOM_CARTON).sum())
+        if n_ctn_lines:
+            emit("generate",
+                 f"{n_ctn_lines} carton-pick lines produced from each-line "
+                 f"conversion (min_full_cartons={settings.min_full_cartons})",
+                 level="ok")
         result = generate_wave_pick_sheets(
-            classification=classification, so_lines=snap.so_lines,
+            classification=classification, so_lines=wave_so_lines,
             sku_locations=sku_locations,
             run_group_col=settings.run_group_col,
             early_release_cartons=settings.early_release_cartons,
@@ -482,6 +561,8 @@ def run_wave_generation(
         emit("generate",
              f"{result.summary['n_waves']} waves, "
              f"{result.summary['n_orders_total']} orders, "
+             f"{result.summary['n_lines_carton_pick']} consolidated carton-pick rows "
+             f"({result.summary['n_carton_picks_no_reserve']} no-reserve), "
              f"{result.summary['n_lines_unallocated']} unallocated lines, "
              f"{result.summary['n_orders_skipped']} skipped", level="ok")
 

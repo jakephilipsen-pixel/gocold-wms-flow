@@ -46,10 +46,14 @@ def write_wave_csvs(sheet: WavePickSheet, out_dir: Path) -> WaveCsvPaths:
         "sublevel",
         "product_code",
         "product_name",
+        "pick_uom",
         "qty_cartons",
+        "qty_eaches",
         "cartons_running_total",
         "contributing_so_refs",
         "unallocated",
+        "reserve_unavailable",
+        "qty_short",
     ]
     picks_path = out_dir / f"{sheet.wave_id}_picks.csv"
     # reindex fills any absent column (e.g. unallocated) with NaN rather
