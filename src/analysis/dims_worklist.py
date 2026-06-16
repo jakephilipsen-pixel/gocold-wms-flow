@@ -12,9 +12,11 @@ dims_worklist_xlsx.write_worklist_xlsx; IO/fetch in scripts/build_dims_worklist.
 """
 from __future__ import annotations
 
-import math
+import logging
 
 import pandas as pd
+
+log = logging.getLogger(__name__)
 
 WORKLIST_COLUMNS = [
     "product_code", "product_name", "kind", "cc_product_id",
@@ -30,9 +32,9 @@ def _norm(code: object) -> str:
 
 
 def _classify(ipq: object) -> str:
-    if ipq is None or (isinstance(ipq, float) and math.isnan(ipq)) or pd.isna(ipq):
-        return "unknown"
     try:
+        if pd.isna(ipq):
+            return "unknown"
         v = float(ipq)
     except (TypeError, ValueError):
         return "unknown"
@@ -63,15 +65,23 @@ def _find_uom_by_baseqty(uoms: dict, target: object) -> str | None:
 
 def build_worklist(dims_df: pd.DataFrame, products: list[dict]) -> pd.DataFrame:
     """Join CC products (authoritative row set) against captured dims."""
+    norm_codes = dims_df["product_code"].map(_norm)
+    dup_mask = norm_codes.duplicated(keep=False)
+    if dup_mask.any():
+        log.warning(
+            "duplicate product codes in dims_df (last row wins): %s",
+            sorted(norm_codes[dup_mask].unique()),
+        )
     dims_by_code: dict[str, pd.Series] = {}
     for _, r in dims_df.iterrows():
         dims_by_code[_norm(r["product_code"])] = r
 
     rows: list[dict] = []
     for p in products:
-        code = _norm((p.get("references") or {}).get("code"))
-        if not code:
+        raw_code = (p.get("references") or {}).get("code")
+        if not raw_code:
             continue
+        code = _norm(raw_code)
         uoms = p.get("unitOfMeasures") or {}
         d = dims_by_code.get(code)
         has_dims = d is not None
