@@ -20,9 +20,9 @@ _YELLOW = "FFFFE0"          # needs fill / resolve
 _GREY = "D9D9D9"            # not-for-fill (inner each cells)
 _EACH_COLS = ("each_l_mm", "each_w_mm", "each_h_mm")
 
-_yellow_fill = PatternFill("solid", fgColor=_YELLOW)
-_grey_fill = PatternFill("solid", fgColor=_GREY)
-_header_fill = PatternFill("solid", fgColor=_HEADER_BG)
+_yellow_fill = PatternFill("solid", fgColor=f"FF{_YELLOW}")
+_grey_fill = PatternFill("solid", fgColor=f"FF{_GREY}")
+_header_fill = PatternFill("solid", fgColor=f"FF{_HEADER_BG}")
 
 
 def _col_idx(name: str) -> int:

@@ -86,3 +86,15 @@ def test_weight_pending_cell_highlighted(tmp_path):
     r = 4  # NOWT = third data row
     cell = ws.cell(row=r, column=_col_letter("outer_weight_kg"))
     assert _fill_hex(cell) == _YELLOW
+
+
+def test_unknown_row_ipq_and_each_cells_highlighted(tmp_path):
+    # a CC product with no captured dims → kind "unknown" → ipq + each cells yellow
+    wl = build_worklist(_dims([]), [_prod("GHOST", "no dims", {"EA": {"baseQty": 1}})])
+    out = tmp_path / "unknown.xlsx"
+    write_worklist_xlsx(wl, out)
+    ws = load_workbook(out).active
+    r = 2
+    for col_name in ("inner_pack_qty", "each_l_mm", "each_w_mm", "each_h_mm"):
+        cell = ws.cell(row=r, column=_col_letter(col_name))
+        assert _fill_hex(cell) == _YELLOW
