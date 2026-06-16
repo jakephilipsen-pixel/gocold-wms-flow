@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""Build the dims completion worklist.
+
+Reads CartonCloud's live active Forage products (READ-ONLY) and joins them
+against locally captured carton dims, then writes a highlighted xlsx listing
+exactly what still needs measuring:
+  - inner SKUs (inner-pack-qty == 1): captured dims already are each-level
+  - carton SKUs (> 1): each-level L/W/H highlighted for physical measurement
+  - unknown / not-captured / weight-pending: flagged
+
+CC stays read-only. Nothing is written back to CC by this script.
+
+Usage:
+    .venv/bin/python scripts/build_dims_worklist.py \
+        --dims data/dims/dims_2026-05-13.xlsx \
+        --out  data/dims/dims_worklist_<date>.xlsx
+
+If --out is omitted, writes data/dims/dims_worklist.xlsx.
+"""
+from __future__ import annotations
+
+import argparse
+import logging
+import sys
+from pathlib import Path
+
+# repo-root import shim (mirrors scripts/extract.py)
+_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT / "src"))
+
+from analysis.dim_loader import load_dimensions  # noqa: E402
+from analysis.dims_worklist import build_worklist, captured_not_in_cc  # noqa: E402
+from analysis.dims_worklist_xlsx import write_worklist_xlsx  # noqa: E402
+from cc_client import CartonCloudClient, search_warehouse_products  # noqa: E402
+
+log = logging.getLogger("build_dims_worklist")
+
+
+def _load_dotenv(path: Path) -> None:
+    """Tiny .env loader (mirrors scripts/smoke_test.py)."""
+    if not path.exists():
+        return
+    import os
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        os.environ.setdefault(key.strip(), val.strip().strip('"').strip("'"))
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--dims", type=Path,
+                   default=_ROOT / "data/dims/dims_2026-05-13.xlsx",
+                   help="captured dims capture sheet (default: May 2026 sheet)")
+    p.add_argument("--out", type=Path,
+                   default=_ROOT / "data/dims/dims_worklist.xlsx",
+                   help="output worklist xlsx path")
+    args = p.parse_args()
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    _load_dotenv(_ROOT / ".env")
+
+    log.info("loading captured dims from %s", args.dims)
+    dims_df = load_dimensions(args.dims)
+
+    log.info("pulling active Forage products from CartonCloud (read-only)…")
+    client = CartonCloudClient.from_env()
+    products = list(search_warehouse_products(client))
+    log.info("  %d active products", len(products))
+
+    wl = build_worklist(dims_df, products)
+    orphans = captured_not_in_cc(dims_df, products)
+
+    # summary
+    counts = wl["kind"].value_counts().to_dict()
+    log.info("worklist rows: %d", len(wl))
+    log.info("  inner (complete)         : %d", counts.get("inner", 0))
+    log.info("  carton (each-fill needed): %d", counts.get("carton", 0))
+    log.info("  unknown (resolve ipq)    : %d", counts.get("unknown", 0))
+    log.info("  weight pending           : %d", int(wl["weight_pending"].sum()))
+    log.info("  no carton UoM in CC      : %d", int(wl["no_carton_uom"].sum()))
+    log.info("  not captured locally     : %d", int(wl["not_captured"].sum()))
+    if orphans:
+        log.info("  captured but NOT in CC (%d): %s", len(orphans), ", ".join(orphans))
+
+    write_worklist_xlsx(wl, args.out)
+    log.info("wrote %s", args.out)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
