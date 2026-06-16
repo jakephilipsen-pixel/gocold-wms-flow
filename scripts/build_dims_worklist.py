@@ -35,6 +35,12 @@ from cc_client import CartonCloudClient, search_warehouse_products  # noqa: E402
 
 log = logging.getLogger("build_dims_worklist")
 
+# The Forage Company (canonical, per CLAUDE.md). The CC client is NOT
+# customer-scoped — it sees the whole tenant (~3700 products) — so the
+# worklist must filter to Forage explicitly or it fills with other
+# customers' SKUs.
+FORAGE_CUSTOMER_ID = "d4810e1e-91ab-43ed-b68e-b72bd858b122"
+
 
 def _load_dotenv(path: Path) -> None:
     """Tiny .env loader (mirrors scripts/smoke_test.py)."""
@@ -58,6 +64,9 @@ def main() -> int:
     p.add_argument("--out", type=Path,
                    default=_ROOT / "data/dims/dims_worklist.xlsx",
                    help="output worklist xlsx path")
+    p.add_argument("--customer-id", type=str, default=FORAGE_CUSTOMER_ID,
+                   help="CC customer UUID to scope products to "
+                        "(default: The Forage Company)")
     args = p.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -68,8 +77,8 @@ def main() -> int:
 
     log.info("pulling active Forage products from CartonCloud (read-only)…")
     client = CartonCloudClient.from_env()
-    products = list(search_warehouse_products(client))
-    log.info("  %d active products", len(products))
+    products = list(search_warehouse_products(client, customer_id=args.customer_id))
+    log.info("  %d active products (customer %s)", len(products), args.customer_id)
 
     wl = build_worklist(dims_df, products)
     orphans = captured_not_in_cc(dims_df, products)
