@@ -74,3 +74,51 @@ def test_code_match_is_trim_and_case_insensitive():
     row = build_worklist(dims, prods).iloc[0]
     assert row["kind"] == "inner"
     assert row["not_captured"] == False  # matched despite whitespace/case
+
+
+def test_weight_pending_when_weight_missing():
+    dims = _dims([{"product_code": "NOWT", "outer_l_mm": 10, "outer_w_mm": 10,
+                   "outer_h_mm": 10, "outer_weight_kg": float("nan"),
+                   "inner_pack_qty": 1}])
+    prods = [_prod("NOWT", "no weight", {"EA": {"baseQty": 1}})]
+    row = build_worklist(dims, prods).iloc[0]
+    assert bool(row["weight_pending"]) is True
+
+
+def test_cc_product_without_captured_dims_is_not_captured_and_unknown():
+    dims = _dims([])  # nothing captured
+    prods = [_prod("NEW-SKU", "brand new", {"EA": {"baseQty": 1}})]
+    row = build_worklist(dims, prods).iloc[0]
+    assert bool(row["not_captured"]) is True
+    assert row["kind"] == "unknown"
+    assert bool(row["ipq_unknown"]) is True
+    assert bool(row["weight_pending"]) is True
+
+
+def test_blank_inner_pack_qty_is_unknown():
+    dims = _dims([{"product_code": "BLANK", "outer_l_mm": 1, "outer_w_mm": 1,
+                   "outer_h_mm": 1, "outer_weight_kg": 1,
+                   "inner_pack_qty": float("nan")}])
+    prods = [_prod("BLANK", "x", {"EA": {"baseQty": 1}, "CT": {"baseQty": 12}})]
+    row = build_worklist(dims, prods).iloc[0]
+    assert row["kind"] == "unknown"
+    assert bool(row["ipq_unknown"]) is True
+    assert bool(row["no_carton_uom"]) is False  # unknown kind doesn't demand a carton UoM
+
+
+def test_captured_not_in_cc_lists_orphans():
+    dims = _dims([
+        {"product_code": "IN-CC", "outer_l_mm": 1, "outer_w_mm": 1, "outer_h_mm": 1,
+         "outer_weight_kg": 1, "inner_pack_qty": 1},
+        {"product_code": "GONE", "outer_l_mm": 1, "outer_w_mm": 1, "outer_h_mm": 1,
+         "outer_weight_kg": 1, "inner_pack_qty": 1},
+    ])
+    prods = [_prod("IN-CC", "x", {"EA": {"baseQty": 1}})]
+    assert captured_not_in_cc(dims, prods) == ["GONE"]
+
+
+def test_row_count_equals_cc_product_count():
+    dims = _dims([])
+    prods = [_prod("A", "a", {"EA": {"baseQty": 1}}),
+             _prod("B", "b", {"EA": {"baseQty": 1}})]
+    assert len(build_worklist(dims, prods)) == 2
