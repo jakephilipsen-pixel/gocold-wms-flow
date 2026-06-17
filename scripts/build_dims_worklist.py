@@ -31,6 +31,10 @@ sys.path.insert(0, str(_ROOT / "src"))
 from analysis.dim_loader import load_dimensions  # noqa: E402
 from analysis.dims_worklist import build_worklist, captured_not_in_cc  # noqa: E402
 from analysis.dims_worklist_xlsx import write_worklist_xlsx  # noqa: E402
+from analysis.dims_measuring_sheet import (  # noqa: E402
+    partition_measuring,
+    write_measuring_sheet,
+)
 from cc_client import CartonCloudClient, search_warehouse_products  # noqa: E402
 
 log = logging.getLogger("build_dims_worklist")
@@ -67,6 +71,10 @@ def main() -> int:
     p.add_argument("--customer-id", type=str, default=FORAGE_CUSTOMER_ID,
                    help="CC customer UUID to scope products to "
                         "(default: The Forage Company)")
+    p.add_argument("--measuring-sheet", type=Path,
+                   default=_ROOT / "data/dims/dims_measuring_sheet.xlsx",
+                   help="output trimmed print-friendly measuring sheet "
+                        "(only rows needing work; set to '' to skip)")
     args = p.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -97,6 +105,16 @@ def main() -> int:
 
     write_worklist_xlsx(wl, args.out)
     log.info("wrote %s", args.out)
+
+    if str(args.measuring_sheet):
+        groups = partition_measuring(wl)
+        log.info("measuring sheet groups:")
+        log.info("  measure each unit (carton): %d", len(groups["measure_each"]))
+        log.info("  full capture (unknown)    : %d", len(groups["full_capture"]))
+        log.info("  weigh only (inner no wt)  : %d", len(groups["weigh_only"]))
+        write_measuring_sheet(groups, args.measuring_sheet)
+        log.info("wrote %s", args.measuring_sheet)
+
     return 0
 
 
