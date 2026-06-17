@@ -65,14 +65,19 @@ def main() -> int:
     p.add_argument("--dims", type=Path,
                    default=_ROOT / "data/dims/dims_2026-05-13.xlsx",
                    help="captured dims capture sheet (default: May 2026 sheet)")
+    # NB: outputs live in data/dims/worklists/ (a subdir), NOT directly in
+    # data/dims/. The wave pipeline globs data/dims/dims_*.xlsx for the capture
+    # sheet (wave_runner._latest_file), so a "dims_*.xlsx" written here would be
+    # mistaken for a capture sheet and break wave generation. The subdir keeps
+    # these out of that non-recursive glob.
     p.add_argument("--out", type=Path,
-                   default=_ROOT / "data/dims/dims_worklist.xlsx",
+                   default=_ROOT / "data/dims/worklists/dims_worklist.xlsx",
                    help="output worklist xlsx path")
     p.add_argument("--customer-id", type=str, default=FORAGE_CUSTOMER_ID,
                    help="CC customer UUID to scope products to "
                         "(default: The Forage Company)")
     p.add_argument("--measuring-sheet", type=Path,
-                   default=_ROOT / "data/dims/dims_measuring_sheet.xlsx",
+                   default=_ROOT / "data/dims/worklists/dims_measuring_sheet.xlsx",
                    help="output trimmed print-friendly measuring sheet "
                         "(only rows needing work; set to '' to skip)")
     args = p.parse_args()
