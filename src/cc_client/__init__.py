@@ -25,6 +25,11 @@ from .write_config import (
     WriteConfig,
     SANDBOX_CUSTOMER_ID,
 )
+from .write_authz import (
+    verify_write_auth,
+    CartonCloudWriteAuthNotConfigured,
+    CartonCloudWriteAuthFailed,
+)
 
 __all__ = [
     "CartonCloudClient",
@@ -33,8 +38,11 @@ __all__ = [
     "CartonCloudRateLimited",
     "CartonCloudWriteRefused",
     "CartonCloudTimeout",
+    "CartonCloudWriteAuthNotConfigured",
+    "CartonCloudWriteAuthFailed",
     "WriteConfig",
     "SANDBOX_CUSTOMER_ID",
+    "verify_write_auth",
     "get_sku_locations",
     "get_stock_on_hand",
     "search_consignments",
