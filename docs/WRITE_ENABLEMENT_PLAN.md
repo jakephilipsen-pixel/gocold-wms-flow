@@ -172,8 +172,14 @@ routes:
 - **(b) Port `patchProductDims` into the Python spine** (§2). One stack, but
   re-implements proven code — must re-earn the 134 tests' worth of confidence.
 
-**Decision deferred to Jake** (recorded as open in §6). Either way, the first
-live action is one sandbox PATCH (§4).
+**DECISION (2026-06-20, M-DIMS-1): ROUTE B — port `patchProductDims` natively into
+the W0–W5 Python spine.** One stack on the floor, one gate model, one deployable,
+and the right shape for the marketable-WMS ambition (§6.3). dim-capture-app is now a
+**reference to port from, not a service to call**; its 134 tests are the behavioural
+spec. Carry-over: `PATCH /products/{id}`, `Accept-Version: 1`, mm (L/W/H) / kg
+(weight), no conversion. Idempotency comes from **W4** (in-process lock by product
+id + read-before-write diff), not a ported advisory lock. The first live action is
+one sandbox PATCH (§4 / M-DIMS-3).
 
 ### 3.2 Pick-confirmation (mark waves/lines picked) — SECOND, highest daily value
 
@@ -260,9 +266,9 @@ Only then is the sandbox round-trip (§4 step 2) permitted.
 
 ## 6. Open decisions (recorded, not yet made)
 
-1. **Dims write: integrate dim-capture-app (route a) or port into Python (route
-   b)?** §3.1. Trade-off: proven-code-reuse + second stack vs one-stack +
-   re-implementation. Jake to decide.
+1. ~~**Dims write: integrate dim-capture-app (route a) or port into Python (route
+   b)?**~~ **RESOLVED 2026-06-20 (M-DIMS-1): Route B — port into the Python spine.**
+   See §3.1.
 2. **Build order after dims:** brief offers pick-confirmation (value) vs putaway
    (low risk) first. Putaway may be API-blocked (§3.3 404). Provisional order
    here is dims → picks → putaway → dispatch; confirm.

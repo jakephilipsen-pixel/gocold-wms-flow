@@ -83,12 +83,18 @@ module. This is the `docs/WRITE_ENABLEMENT_PLAN.md` §5 checklist.
 
 ## Phase DIMS — first surface (pattern already proven)
 
-### M-DIMS-1 — `dims-write-decision`  *(decision module, not code)*
-- **What:** resolve open decision §6.1 — integrate dim-capture-app (route a) vs
-  port `patchProductDims` into the Python spine (route b). Document the choice.
-- **Depends on:** W-phase done.
-- **Done when:** decision recorded in GROUND_TRUTH; chosen route's module list
-  finalised.
+### M-DIMS-1 — `dims-write-decision`  ✅ DONE (decision, 2026-06-20)
+- **Decision: ROUTE B — port the dims write natively into the W0–W5 Python spine.**
+  NOT integrate/call the dim-capture-app Node service.
+- **Rationale:** one stack on the floor (brief §5), one gate model, one deployable —
+  and the right shape for the marketable-WMS ambition (§6.3). dim-capture-app becomes
+  a **reference to port from, not a service to call**; its 134 tests are the
+  behavioural spec for the Python port.
+- **Carry-over from the verified dim-capture-app code:** `PATCH /products/{id}`,
+  `Accept-Version: 1`, units **mm** (L/W/H) and **kg** (weight), **no conversion**.
+  Idempotency is **not** ported as advisory-lock code — it's provided by **W4**
+  (in-process lock by product id + read-before-write diff), since the Python side
+  has no Postgres.
 - **Writes CC:** no.
 
 ### M-DIMS-2 — `dims-shadow`
@@ -100,12 +106,22 @@ module. This is the `docs/WRITE_ENABLEMENT_PLAN.md` §5 checklist.
 - **Writes CC:** no.
 
 ### M-DIMS-3 — `dims-sandbox-roundtrip`  *(FIRST REAL CC WRITE)*
-- **What:** with allow-list = sandbox only, perform ONE real
-  `PATCH /products/{id}` against ONE `s`-prefixed sandbox SKU. Read back, confirm.
+- **What:** with allow-list = sandbox only, perform real `PATCH /products/{id}`
+  against ONE **named, known-active** sandbox SKU (active-status verified by a read
+  first — "allow-listed" ≠ "safe to target blind", see WRITE_ENABLEMENT_PLAN §2.3).
+- **Agreed first-PATCH protocol (restore-after, original sourced from CC):**
+  1. **GET** the SKU's original dims and store them.
+  2. **PATCH** the new dims.
+  3. **read-back verify** the new dims landed.
+  4. **PATCH back** to the stored original dims.
+  5. **read-back verify** the original dims are restored.
+  Two round-trips; the original values come from CC itself (not assumed). Leaves the
+  sandbox SKU exactly as found.
 - **Depends on:** M-DIMS-2, all W-gates green.
-- **Done when:** one sandbox SKU's dims updated via API, read-back matches,
-  idempotent re-run no-ops, audit log records it. **This is the CC-round-trip
-  proof the 134 mocked tests cannot give.**
+- **Done when:** the 5-step protocol passes against one named sandbox SKU,
+  idempotent re-run no-ops (W4), audit log records each PATCH. **This is the
+  CC-round-trip proof the 134 mocked tests cannot give.** Jake reviews this module
+  closely.
 - **Writes CC:** YES — sandbox customer only.
 
 ### M-DIMS-4 — `dims-sandbox-soak`
