@@ -19,9 +19,9 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
-# Verified by a scoped CC read on 2026-06-20: this id resolves to
-# "SANDBOX TEST - FORAGE" (46 active, s-prefixed SKUs) within the live tenant
-# 4906532d-94ad-444c-89cf-e394d7d73581.
+# Config-verified, not yet write-proven. A scoped read on 2026-06-20 resolved
+# this id to "SANDBOX TEST - FORAGE" in tenant 4906532d-... — see GROUND_TRUTH.md
+# for the recorded result. The write-path round-trip proof lands at M-DIMS-3.
 SANDBOX_CUSTOMER_ID = "a8dab3f2-defa-433e-87a0-01dee48a2286"
 
 
