@@ -133,10 +133,40 @@ this record corrects.
 
 ---
 
+## 5. Sandbox customer — scoped-read verification (2026-06-20)
+
+The write-enablement plan defaults all writes to a single sandbox customer. That
+id was checked against CartonCloud with a **read-only** scoped query
+(`POST /warehouse-products/search`, `write_enabled=False` throughout — no mutate).
+
+| Fact | Result |
+|---|---|
+| Customer id | `a8dab3f2-defa-433e-87a0-01dee48a2286` |
+| Resolves to | **`SANDBOX TEST - FORAGE`** |
+| Tenant | `4906532d-94ad-444c-89cf-e394d7d73581` (same tenant as live Forage) |
+| Product count | **46 active** (1111 total; ~1065 inactive/archived `ZZ*` legacy test SKUs) |
+| Active code shape | `s`-prefixed (`sRK-`, `sGP-`, `sHL-`, `sRD-`, `sTC-`…) |
+| Live contrast | `d4810e1e-…` → "The Forage Company", codes `FP-*`/`HI-*` — the customer-id filter genuinely discriminates |
+
+**Status: config-verified, NOT write-proven.** The read confirms the id resolves
+as claimed; it does **not** prove the write path. The CC round-trip proof lands at
+**M-DIMS-3** (one real `PATCH` against one sandbox SKU, read back). Treat the id as
+verified-for-config only until then.
+
+Caveat carried into the spine: the customer-id allow-list (WRITE_ENABLEMENT_PLAN
+§2.3) admits **all 1111** products under this customer, not just the 46 active —
+the active-status / `s`-prefix selection is operational, layered on top of the
+customer-id safety boundary, not the boundary itself.
+
+---
+
 ## Footer
 
-- **Branch:** `feature/dims-cc-sync`
-- **HEAD commit:** `9c53a994aa0828ccae05525b48ece77f180c3837`
+- **Branch:** `master` (canonical docs; cherry-picked from `feature/dims-cc-sync`).
+  Spine code on `feature/write-spine-w0`. dims-worklist code remains on
+  `feature/dims-cc-sync` pending its own review.
+- **§1–§4 verified at:** `9c53a994aa0828ccae05525b48ece77f180c3837` (tree state on
+  `feature/dims-cc-sync`); §5 added 2026-06-20.
 - **dim-capture-app repo HEAD (external):** `8e3b065` on `main` @ `github.com/jakephilipsen-pixel/dim-capture-app`
-- **Date:** 2026-06-19
-- **Verified by:** Claude Code, from the working tree (git + grep + full pytest run)
+- **Date:** 2026-06-20
+- **Verified by:** Claude Code, from the working tree (git + grep + full pytest run + read-only scoped CC query)
