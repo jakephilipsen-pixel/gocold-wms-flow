@@ -25,8 +25,24 @@ issues a mutating call to CC.
 | **Dispatch** | **built (read-only, predict-to-run)** | y — consignment-history learning + prediction (`src/dispatch/`), web console `src/web_dispatch/` | **n / unbuilt** — `CartonCloudSink` exists but refuses + `NotImplementedError` (see §2.4) | pass — `test_dispatch_*` (9 files, ~34 tests), `test_web_dispatch` (12), `test_build_dispatch` (1) | 9c53a99 |
 | **Dims** | **partial (reconciliation built; CC write lives in a SEPARATE repo)** | y — warehouse-products read; worklist/reconciliation tooling (`src/analysis/dims_worklist*.py`, `dims_measuring_sheet.py`, `dim_loader.py`) | **n IN THIS REPO.** The dims→CC write (`PATCH /products`) exists ONLY in the separate `dim-capture-app` repo (§3) | mostly pass — `test_dims_worklist` (10), `test_dims_worklist_xlsx` (5), `test_dims_measuring_sheet` (4); **`test_dim_loader` has 1 FAILING test** (see §4) | 9c53a99 |
 
-**Aggregate test status at HEAD: 212 passed, 1 failed** (full suite, no network).
-The one failure is in the Dims surface — `test_dim_loader.py::test_june_ods_template_loads`, a fixture/data mismatch (`cartons-per-pallet` column absent from a capture template), **not** a write-safety regression.
+**Aggregate test status on `feature/dims-cc-sync` (where the §1 surface code lives):
+212 passed, 1 failed** (full suite, no network).
+The one failure is `test_dim_loader.py::test_june_ods_template_loads`, a fixture/data
+mismatch (`cartons-per-pallet` column absent from a capture template), **not** a
+write-safety regression.
+
+**Test baseline is branch- and environment-dependent — record the true green to keep
+regressions detectable:**
+- **`master` (this docs line), full local data: 193 passed, 1 failed** (same known
+  `test_dim_loader` failure). The spine adds its own tests on top: W0 `+24`, W1 `+12`.
+- **`test_wave_runner.py` is data-dependent:** several of its tests need the local
+  `data/` parquet fixtures (gitignored: `data/raw/` etc.). They **pass with the real
+  data present** and **error on a data-less checkout** — an environment artifact, NOT
+  a code regression. A "true green" run therefore requires the data files in place;
+  a fresh clone will show those as errors until the data is provided.
+- So a real regression = the known-failure count rises **above** the one documented
+  `test_dim_loader` case, or a non-data test newly fails. Don't read data-less
+  `test_wave_runner` errors as breakage.
 
 ---
 

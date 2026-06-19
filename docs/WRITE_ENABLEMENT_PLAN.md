@@ -121,6 +121,14 @@ This is the single most safety-critical check in the whole write path. It must
 have its own unit test that asserts a live-Forage-id target is refused even when
 every other gate is open.
 
+**"Allow-listed" is not "safe to target blind."** The guard gates by *customer id*,
+not by active-status. An allow-listed customer exposes its **entire** product set:
+the sandbox customer holds **1111** products (only 46 active, `s`-prefixed — the rest
+~1065 inactive/archived `ZZ*` legacy SKUs, see GROUND_TRUTH §5). The allow-list lets
+a write reach **any** of those 1111, not just the 46 active. So M-DIMS-3 must target a
+**deliberately chosen, known-active** sandbox SKU (verified active by a read first) —
+never an arbitrary product just because its customer cleared the guard.
+
 ### 2.4 Idempotency / serialisation (Python analogue of advisory locks)
 
 The Python side has no Postgres, so dim-capture-app's `pg_advisory_xact_lock`
