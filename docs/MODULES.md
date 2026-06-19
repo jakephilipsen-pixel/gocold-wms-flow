@@ -109,8 +109,10 @@ module. This is the `docs/WRITE_ENABLEMENT_PLAN.md` §5 checklist.
 - **Writes CC:** YES — sandbox customer only.
 
 ### M-DIMS-4 — `dims-sandbox-soak`
-- **What:** run dims sync across all 46 sandbox SKUs in normal operation for the
-  agreed soak period.
+- **What:** run dims sync across all 46 active sandbox SKUs in normal operation
+  for the agreed soak period. (46 active = the `s`-prefixed Forage mirrors;
+  the customer holds 1111 total incl. ~1065 inactive `ZZ*` SKUs — see
+  WRITE_ENABLEMENT_PLAN §0.)
 - **Depends on:** M-DIMS-3.
 - **Done when:** soak passes — no double-applies, rate limits respected, errors
   handled against the real endpoint.

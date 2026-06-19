@@ -20,8 +20,14 @@ purpose is to add the missing round-trip proof safely.
 **The sandbox is in the same CC tenant as live Forage.**
 
 - Sandbox customer: `SANDBOX TEST - FORAGE` →
-  `a8dab3f2-defa-433e-87a0-01dee48a2286` (46 products, Forage codes/descriptions
-  with an `s` prefix).
+  `a8dab3f2-defa-433e-87a0-01dee48a2286` (**46 active** products, Forage
+  codes/descriptions with an `s` prefix). Confirmed by a scoped CC read on
+  2026-06-20: the customer holds 1111 products total, but only 46 are active —
+  those 46 are the `s`-prefixed Forage mirrors; the other ~1065 are
+  inactive/archived `ZZ*` legacy test SKUs. Note the customer-id allow-list
+  (§2.3) admits *all* products under this customer, not just the 46 active — the
+  active-status / `s`-prefix filter is an operational selector layered on top of
+  the customer-id safety boundary.
 - Live customer: `The Forage Company` → `d4810e1e-91ab-43ed-b68e-b72bd858b122`.
 - Tenant (both): `4906532d-94ad-444c-89cf-e394d7d73581`.
 
@@ -209,7 +215,7 @@ all four pass, in order.**
    **only** the sandbox id, perform ONE real mutate against ONE sandbox SKU
    (e.g. an `s`-prefixed product). Read it back. Confirm the value landed and
    matches. This is the CC-round-trip proof the 134 mocked tests can't give.
-3. **Sandbox soak.** Run the surface against the 46 sandbox SKUs in normal
+3. **Sandbox soak.** Run the surface against the 46 active sandbox SKUs in normal
    operation for an agreed period. Confirm idempotency (re-running doesn't
    double-apply), rate-limit behaviour, error handling against a real endpoint.
 4. **Live promotion (separately approved).** Only after 1–3, and only by an
