@@ -9,6 +9,8 @@ from .client import (
     CartonCloudError,
     CartonCloudAuthError,
     CartonCloudRateLimited,
+    CartonCloudWriteRefused,
+    CartonCloudTimeout,
 )
 from .queries import (
     get_sku_locations,
@@ -29,6 +31,8 @@ __all__ = [
     "CartonCloudError",
     "CartonCloudAuthError",
     "CartonCloudRateLimited",
+    "CartonCloudWriteRefused",
+    "CartonCloudTimeout",
     "WriteConfig",
     "SANDBOX_CUSTOMER_ID",
     "get_sku_locations",

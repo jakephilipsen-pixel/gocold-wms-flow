@@ -35,6 +35,14 @@ class CartonCloudRateLimited(CartonCloudError):
     """429 received after retries exhausted."""
 
 
+class CartonCloudWriteRefused(CartonCloudError):
+    """A mutate was blocked by the write gate (write_enabled and/or approval)."""
+
+
+class CartonCloudTimeout(CartonCloudError):
+    """A mutate exceeded its abort timeout."""
+
+
 @dataclass
 class _Token:
     access_token: str
@@ -57,6 +65,7 @@ class CartonCloudClient:
     DEFAULT_BASE_URL = "https://api.cartoncloud.com"
     ACCEPT_VERSION = "1"
     MAX_RETRIES = 4
+    MUTATE_TIMEOUT = 12.0  # seconds; abort budget for a single write (W1)
 
     def __init__(
         self,
@@ -211,6 +220,74 @@ class CartonCloudClient:
 
         # should be unreachable
         raise CartonCloudError(f"exhausted retries: {last_exc}")
+
+    # ---------- guarded write path (W1) ----------
+
+    def _mutate(
+        self,
+        method: str,
+        path: str,
+        *,
+        approved: bool,
+        json: Any = None,
+        tenant_scoped: bool = True,
+        headers: dict[str, str] | None = None,
+    ) -> httpx.Response:
+        """Issue a single, explicitly-gated, non-GET write to CartonCloud.
+
+        The only sanctioned write path in this client. Double-gated: refuses
+        unless ``write_enabled`` (config) AND the per-call ``approved`` token are
+        both set — mirroring ``CartonCloudSink``'s two-flag rule. Issues the
+        request exactly ONCE; it deliberately does NOT go through ``_request``'s
+        retry loop, because auto-retrying a non-idempotent write risks a
+        double-apply. A timeout (``MUTATE_TIMEOUT``) becomes ``CartonCloudTimeout``
+        and no raw httpx error escapes. Unlike the ``post_search``/report-run
+        paths, it NEVER toggles ``write_enabled`` — the gate is checked, not
+        transiently flipped.
+        """
+        if not self.write_enabled:
+            raise CartonCloudWriteRefused(
+                f"write refused (method={method}): write_enabled is False"
+            )
+        if not approved:
+            raise CartonCloudWriteRefused(
+                f"write refused (method={method} {path}): per-call approval not granted"
+            )
+
+        if tenant_scoped:
+            url = urljoin(self.base_url + "/", f"tenants/{self.tenant_id}{path}")
+        else:
+            url = urljoin(self.base_url + "/", path.lstrip("/"))
+
+        merged_headers = {
+            "Accept-Version": self.ACCEPT_VERSION,
+            "Authorization": f"Bearer {self._ensure_token()}",
+        }
+        if json is not None:
+            merged_headers["Content-Type"] = "application/json"
+        if headers:
+            merged_headers.update(headers)
+
+        try:
+            r = self._http.request(
+                method,
+                url,
+                json=json,
+                headers=merged_headers,
+                timeout=self.MUTATE_TIMEOUT,
+            )
+        except httpx.TimeoutException as e:
+            raise CartonCloudTimeout(
+                f"{method} {path} timed out after {self.MUTATE_TIMEOUT}s"
+            ) from e
+        except httpx.HTTPError as e:
+            raise CartonCloudError(f"network error on {method} {path}: {e}") from e
+
+        if not r.is_success:
+            raise CartonCloudError(
+                f"{method} {path} failed: {r.status_code} {r.text[:300]}"
+            )
+        return r
 
     # ---------- public read helpers ----------
 
