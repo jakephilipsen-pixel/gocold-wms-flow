@@ -51,7 +51,7 @@ against the sandbox.
   correct. **CC mocked.**
 - **Writes CC:** no.
 
-### W3 — `cc-write-customer-guard`  🟨 In progress (`feature/write-spine-w3`)  *(the §0 guard rail — most safety-critical)*
+### W3 — `cc-write-customer-guard`  ✅ Done (`feature/write-spine-w3`, merged PR #10)  *(the §0 guard rail — most safety-critical)*
 - **What:** before any mutate, resolve the target object's customer id and assert
   it ∈ allow-list. Not in list → refuse, log offending id.
 - **Depends on:** W0, W1.
@@ -60,7 +60,7 @@ against the sandbox.
   passes. **CC mocked.**
 - **Writes CC:** no.
 
-### W4 — `cc-write-idempotency`  🟨 In progress (`feature/write-spine-w4`)  *(analogue of dim-capture-app module 13)*
+### W4 — `cc-write-idempotency`  ✅ Done (`feature/write-spine-w4`, merged PR #11)  *(analogue of dim-capture-app module 13)*
 - **What:** per-object serialisation (in-process lock keyed by object id) +
   read-before-write diff (empty diff → no-op).
 - **Depends on:** W1.
@@ -68,7 +68,7 @@ against the sandbox.
   payload already matches current CC state no-ops. **CC mocked.**
 - **Writes CC:** no.
 
-### W5 — `cc-rate-limit`
+### W5 — `cc-rate-limit`  ✅ Done (`feature/write-spine-w5`, PR #12)
 - **What:** token-bucket limiter on the mutate path. Ceiling = lower of CC's
   ~30/min (outbound create) and 60/min (dim-capture-app bucket) per endpoint.
   Reject (don't queue) when spent.
