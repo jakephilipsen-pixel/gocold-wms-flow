@@ -68,7 +68,7 @@ against the sandbox.
   payload already matches current CC state no-ops. **CC mocked.**
 - **Writes CC:** no.
 
-### W5 — `cc-rate-limit`
+### W5 — `cc-rate-limit`  🟨 In progress (`feature/write-spine-w5`)
 - **What:** token-bucket limiter on the mutate path. Ceiling = lower of CC's
   ~30/min (outbound create) and 60/min (dim-capture-app bucket) per endpoint.
   Reject (don't queue) when spent.
