@@ -34,6 +34,13 @@ from .write_customer_guard import (
     verify_customer_allowed,
     CartonCloudCustomerNotAllowed,
 )
+from .write_idempotency import (
+    compute_diff,
+    serialise_object,
+    ObjectLockRegistry,
+    idempotent_mutate,
+    IdempotentWriteResult,
+)
 
 __all__ = [
     "CartonCloudClient",
@@ -49,6 +56,11 @@ __all__ = [
     "SANDBOX_CUSTOMER_ID",
     "verify_write_auth",
     "verify_customer_allowed",
+    "compute_diff",
+    "serialise_object",
+    "ObjectLockRegistry",
+    "idempotent_mutate",
+    "IdempotentWriteResult",
     "get_sku_locations",
     "get_stock_on_hand",
     "search_consignments",
