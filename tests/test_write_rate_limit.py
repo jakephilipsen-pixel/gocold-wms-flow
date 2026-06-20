@@ -144,6 +144,30 @@ def test_rejection_names_the_endpoint_and_is_typed():
     assert "/products/p1" in str(exc.value)
 
 
+# ---------- fail-safe: a misconfigured rate refuses, never allow-alls ----------
+
+@pytest.mark.parametrize("bad_rate", [0, -1, -30])
+def test_zero_or_negative_rate_fails_closed(bad_rate):
+    # A misconfigured ceiling (0 or negative) must REFUSE every write, never open the
+    # floodgates. Pinned so a future refill/capacity refactor can't silently flip it
+    # from fail-closed to allow-all.
+    clock = FakeClock()
+    limiter = MutateRateLimiter(per_minute=bad_rate, now=clock)
+    with pytest.raises(CartonCloudWriteRateLimited):
+        limiter.check("ep")
+
+
+@pytest.mark.parametrize("bad_rate", [0, -1, -30])
+def test_misconfigured_rate_cannot_refill_into_an_open_state(bad_rate):
+    # Even after a long elapse, a 0/negative rate refills no usable tokens — refusal
+    # is permanent, not merely "empty at t0".
+    clock = FakeClock()
+    limiter = MutateRateLimiter(per_minute=bad_rate, now=clock)
+    clock.advance(3600)  # an hour later
+    with pytest.raises(CartonCloudWriteRateLimited):
+        limiter.check("ep")
+
+
 # ---------- typed: subclasses CartonCloudError, distinct from transport 429 ----------
 
 def test_exception_subclasses_carton_cloud_error():
