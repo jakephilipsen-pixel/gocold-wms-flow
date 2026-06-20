@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from cc_client.client import CartonCloudClient
 from cc_client.write_config import WriteConfig, SANDBOX_CUSTOMER_ID
@@ -177,6 +177,34 @@ def select_writable_sandbox_sku(
             skipped,
         )
     return None, skipped
+
+
+# ---------- desired-dims lookup: sandbox mirror code → captured base code ----------
+
+def sandbox_desired_lookup(
+    captured: Mapping[str, dict[str, Any]],
+) -> Callable[[str], dict[str, Any] | None]:
+    """Build a desired-dims lookup for sandbox SKUs from a captured-dims table.
+
+    The capture template is keyed by the **base** Forage SKU code (e.g. ``RK-001``),
+    but the sandbox customer's SKUs are ``s``-prefixed mirrors (``sRK-001``) —
+    GROUND_TRUTH §5: active sandbox codes ``sRK-/sGP-/sHL-/sRD-/sTC-`` mirror base codes
+    ``RK-/GP-/HL-/RD-/TC-``. So resolve a sandbox code by trying it **directly** first,
+    then by stripping a **single** leading ``s``.
+
+    NOTE (confirm before the live run): the ``s``-prefix correspondence is inferred from
+    GROUND_TRUTH §5, not a documented transform. The M-DIMS-3 hard stop prints the real
+    CC current dims for the chosen SKU, which is the final human check that the mapped
+    desired dims belong to that SKU.
+    """
+    def _lookup(code: str) -> dict[str, Any] | None:
+        if code in captured:
+            return captured[code]
+        if code[:1] == "s" and code[1:] in captured:
+            return captured[code[1:]]
+        return None
+
+    return _lookup
 
 
 # ---------- the run: hard stop, PATCH, read-back verify ----------

@@ -26,6 +26,7 @@ from dims_write.roundtrip import (
     assert_sandbox_only,
     select_writable_sandbox_sku,
     run_sandbox_roundtrip,
+    sandbox_desired_lookup,
     SandboxCandidate,
     HardStopInfo,
     DimsRoundtripRefused,
@@ -302,6 +303,36 @@ def test_run_refuses_to_start_if_not_sandbox_only():
             confirm=lambda info: True,
             candidates=[SandboxCandidate(product_id="p1", code="s-FROZEN-PEAS")],
         )
+
+
+# ---------- sandbox→capture code mapping for desired dims ----------
+
+def test_sandbox_desired_lookup_resolves_s_prefixed_mirror():
+    # Capture template is keyed by the base Forage code (RK-001); the sandbox mirror is
+    # sRK-001 (GROUND_TRUTH §5: sRK-/sGP-/sHL-/sRD-/sTC- ↔ base RK-/GP-/HL-/RD-/TC-).
+    captured = {"RK-001": {"length": 320, "width": 240, "height": 150, "weight": 4}}
+    lookup = sandbox_desired_lookup(captured)
+    assert lookup("sRK-001") == {"length": 320, "width": 240, "height": 150, "weight": 4}
+
+
+def test_sandbox_desired_lookup_also_matches_a_direct_code():
+    captured = {"RK-001": {"length": 320, "width": 240, "height": 150, "weight": 4}}
+    lookup = sandbox_desired_lookup(captured)
+    assert lookup("RK-001") is not None  # a non-prefixed code still resolves
+
+
+def test_sandbox_desired_lookup_returns_none_when_unmapped():
+    captured = {"RK-001": {"length": 320}}
+    lookup = sandbox_desired_lookup(captured)
+    assert lookup("sZZ-999") is None      # no base ZZ-999 captured
+    assert lookup("sRK-002") is None      # mirror exists but its base wasn't captured
+
+
+def test_sandbox_desired_lookup_only_strips_a_single_leading_s():
+    # Must not over-strip: "ssX" → "sX", not "X".
+    captured = {"sX": {"length": 1}, "X": {"length": 2}}
+    lookup = sandbox_desired_lookup(captured)
+    assert lookup("ssX") == {"length": 1}   # one 's' stripped → "sX"
 
 
 # ---------- package export ----------

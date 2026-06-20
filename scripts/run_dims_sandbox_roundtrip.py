@@ -32,6 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from cc_client import CartonCloudClient, WriteConfig  # noqa: E402
 from dims_write import (  # noqa: E402
     run_sandbox_roundtrip,
+    sandbox_desired_lookup,
     DimsRoundtripError,
     HardStopInfo,
 )
@@ -51,7 +52,12 @@ def _load_dotenv(path: Path) -> None:
 
 
 def _build_desired_lookup(dims_path: Path):
-    """code → {length,width,height,weight} from the captured dims (mm / kg, no conversion)."""
+    """Sandbox SKU code → real captured {length,width,height,weight} (mm / kg, no conversion).
+
+    The capture template is keyed by the BASE Forage code (RK-001); the sandbox SKUs are
+    s-prefixed mirrors (sRK-001). `sandbox_desired_lookup` resolves the prefix — see its
+    docstring + GROUND_TRUTH §5. Only fully-measured SKUs (L/W/H present) are offered.
+    """
     df = load_dimensions(dims_path)
     table: dict[str, dict] = {}
     for _, row in df.iterrows():
@@ -62,10 +68,9 @@ def _build_desired_lookup(dims_path: Path):
             "height": row.get("outer_h_mm"),
             "weight": row.get("outer_weight_kg"),
         }
-        # only offer fully-measured SKUs as desired targets
         if all(v is not None and v == v for v in (dims["length"], dims["width"], dims["height"])):
             table[code] = dims
-    return lambda code: table.get(code)
+    return sandbox_desired_lookup(table)
 
 
 def _confirm(info: HardStopInfo) -> bool:
