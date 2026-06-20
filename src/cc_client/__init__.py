@@ -30,6 +30,10 @@ from .write_authz import (
     CartonCloudWriteAuthNotConfigured,
     CartonCloudWriteAuthFailed,
 )
+from .write_customer_guard import (
+    verify_customer_allowed,
+    CartonCloudCustomerNotAllowed,
+)
 
 __all__ = [
     "CartonCloudClient",
@@ -40,9 +44,11 @@ __all__ = [
     "CartonCloudTimeout",
     "CartonCloudWriteAuthNotConfigured",
     "CartonCloudWriteAuthFailed",
+    "CartonCloudCustomerNotAllowed",
     "WriteConfig",
     "SANDBOX_CUSTOMER_ID",
     "verify_write_auth",
+    "verify_customer_allowed",
     "get_sku_locations",
     "get_stock_on_hand",
     "search_consignments",
