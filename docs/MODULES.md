@@ -120,24 +120,42 @@ module. This is the `docs/WRITE_ENABLEMENT_PLAN.md` §5 checklist.
   mocked.**
 - **Writes CC:** no.
 
-### M-DIMS-3 — `dims-sandbox-roundtrip`  *(FIRST REAL CC WRITE)*
-- **What:** with allow-list = sandbox only, perform real `PATCH /products/{id}`
-  against ONE **named, known-active** sandbox SKU (active-status verified by a read
-  first — "allow-listed" ≠ "safe to target blind", see WRITE_ENABLEMENT_PLAN §2.3).
-- **Agreed first-PATCH protocol (restore-after, original sourced from CC):**
-  1. **GET** the SKU's original dims and store them.
-  2. **PATCH** the new dims.
-  3. **read-back verify** the new dims landed.
-  4. **PATCH back** to the stored original dims.
-  5. **read-back verify** the original dims are restored.
-  Two round-trips; the original values come from CC itself (not assumed). Leaves the
-  sandbox SKU exactly as found.
+### M-DIMS-3 — `dims-sandbox-roundtrip`  🟨 In progress (`feature/m-dims-3`)  *(FIRST REAL CC WRITE)*
+- **What:** flip the M-DIMS-2 injection seam from `shadow_mutate_fn` to the real
+  `_mutate`. No surface rebuild — `approve_dims_write` + the gate chain + the M-DIMS-2
+  tests are unchanged. M-DIMS-3 adds the **live mutate fn**, **target selection + run
+  script**, and the **one-time hard stop**.
+- **PROTOCOL (2026-06-20, supersedes the earlier "5-step restore-after"):** apply the
+  SKU's **real** captured desired dims and **leave them in place** — the captured dims
+  are the genuine measurements, so landing them on an active `s`-prefixed sandbox
+  mirror is correct, not a value to restore. This matches WRITE_ENABLEMENT_PLAN §4.2
+  (one real mutate → read back → confirm landed). **3 steps:**
+  1. **GET** chosen SKU's current dims; compute the diff vs the real desired dims.
+  2. **HARD STOP** — print SKU id+code, current dims (from CC), desired dims, the exact
+     diff, the endpoint+verb about to fire, and confirm `write_enabled` + sandbox-only
+     allow-list. Wait for explicit human "go". **No PATCH before confirmation.**
+  3. On "go": **PATCH** real dims via the live `_mutate` (through the full M-DIMS-2
+     chain), then **GET** again and **verify** the read-back matches what was written.
+     Leave the dims in place. Report landed/mismatch.
+- **Preconditions (assert before any write):** `write_enabled=True` AND allow-list is
+  **exactly** sandbox-only (`a8dab3f2-…`) — the live Forage id (`d4810e1e-…`) MUST be
+  absent; refuse to start if it is present. `CC_WRITE_SECRET` configured; valid
+  approval token. (Sandbox-only is asserted positively — the allow-list must equal the
+  sandbox singleton — so the module never names the live id.)
+- **Target selection:** GET the sandbox customer's active `s`-prefixed products; pick
+  one whose real desired dims **differ** from its current CC dims. **Empty-diff guard:**
+  an empty diff proves nothing — skip it (report no-op), select another. The run ends
+  with a SKU that had a non-empty diff, or stops and reports that none did.
+- **Logging:** every step logged (SKU, before/after dims, PATCH payload, verify
+  result) so the run is fully reconstructable. A read-back mismatch is a **hard
+  failure, loud** — raises, never a warning.
 - **Depends on:** M-DIMS-2, all W-gates green.
-- **Done when:** the 5-step protocol passes against one named sandbox SKU,
-  idempotent re-run no-ops (W4), audit log records each PATCH. **This is the
-  CC-round-trip proof the 134 mocked tests cannot give.** Jake reviews this module
-  closely.
-- **Writes CC:** YES — sandbox customer only.
+- **Done when:** CC-mocked tests pass for the new live-fn + selection + verify logic
+  (live fn calls `_mutate` once with the diff; refuses to start if live id is
+  allow-listed; empty-diff SKU skipped not written; read-back mismatch raises). The
+  **actual first PATCH** happens only in a deliberate, human-confirmed run after PR
+  review — not in tests, not automatically. Jake reviews this module closely.
+- **Writes CC:** YES — sandbox customer only, one human-confirmed PATCH per run.
 
 ### M-DIMS-4 — `dims-sandbox-soak`
 - **What:** run dims sync across all 46 active sandbox SKUs in normal operation
