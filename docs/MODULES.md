@@ -60,7 +60,7 @@ against the sandbox.
   passes. **CC mocked.**
 - **Writes CC:** no.
 
-### W4 — `cc-write-idempotency`  *(analogue of dim-capture-app module 13)*
+### W4 — `cc-write-idempotency`  🟨 In progress (`feature/write-spine-w4`)  *(analogue of dim-capture-app module 13)*
 - **What:** per-object serialisation (in-process lock keyed by object id) +
   read-before-write diff (empty diff → no-op).
 - **Depends on:** W1.
