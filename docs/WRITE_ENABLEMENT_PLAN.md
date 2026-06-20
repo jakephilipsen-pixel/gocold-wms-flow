@@ -181,6 +181,40 @@ spec. Carry-over: `PATCH /products/{id}`, `Accept-Version: 1`, mm (L/W/H) / kg
 id + read-before-write diff), not a ported advisory lock. The first live action is
 one sandbox PATCH (§4 / M-DIMS-3).
 
+**M-DIMS-2/3 design contract (2026-06-20) — shadow vs live is ONE injected callable,
+never a code change.** The approve handler is built once and always composes the full
+spine chain in this order:
+
+> **rate-limit (W5) → customer-guard (W3) → authz (W2) → idempotent_mutate (W4)**
+
+The *only* difference between shadow (M-DIMS-2) and live (M-DIMS-3) is the mutate
+function injected into `idempotent_mutate(..., do_mutate=…)`:
+
+- **M-DIMS-2 (shadow):** a `shadow_mutate_fn(product_id)` that logs
+  `"would PATCH /products/{id} with {diff}"` and records — `_mutate` is **never** called.
+- **M-DIMS-3 (live sandbox):** a `live_mutate_fn` that calls W1's real `_mutate`, behind
+  `write_enabled` + sandbox-only allow-list — **no surface/UI rebuild**.
+
+Same UI, same diff render, same approval step, same gates in both modes. This is what
+makes the shadow soak meaningful: the entire production path runs in M-DIMS-2; only the
+final function pointer is stubbed. M-DIMS-3 flips that one value.
+
+Two non-negotiable properties (and their tests):
+1. **The defining assertion** — drive a full approve through the real chain in shadow,
+   spy `_mutate`, assert **0 calls** and that the recorder fired instead. That is what
+   licenses M-DIMS-3 being a one-value flip.
+2. **Gates engage in shadow** — the customer-guard refuses a non-allow-listed target
+   *even though nothing writes* (it doesn't get a pass just because the mutate is
+   stubbed). If a gate only engaged in live mode, the soak wouldn't exercise it.
+
+**The read is real, and read-only.** The GET that fetches current dims (to resolve the
+target's customer id and compute the diff) is the other real-CC interaction in shadow.
+It goes through the normal read path and **must not flip `write_enabled`** — same
+discipline as the W4 diff read. In shadow against the sandbox this GET is real, so the
+soak exercises the real read too; by M-DIMS-3 the only thing left untested is genuinely
+the final write pointer. GET and PATCH share `/products/{id}` so the dims read are the
+dims written.
+
 ### 3.2 Pick-confirmation (mark waves/lines picked) — SECOND, highest daily value
 
 | | |

@@ -97,12 +97,27 @@ module. This is the `docs/WRITE_ENABLEMENT_PLAN.md` §5 checklist.
   has no Postgres.
 - **Writes CC:** no.
 
-### M-DIMS-2 — `dims-shadow`
+### M-DIMS-2 — `dims-shadow`  🟨 In progress (`feature/m-dims-2`)
 - **What:** dims write surface in **shadow mode**. Reads CC product, computes
   dim diff, displays proposed PATCH, requires human approve. Mutate never fires.
-- **Depends on:** M-DIMS-1, W-phase.
-- **Done when:** shadow path shows correct diffs for sandbox SKUs; approve button
-  wired but disabled from calling CC. **CC mocked.**
+- **Design contract (shadow↔live = one injected callable, see PLAN §3.1):** the
+  approve handler is built once and always composes the full chain
+  **rate-limit (W5) → customer-guard (W3) → authz (W2) → idempotent_mutate (W4)**.
+  The ONLY shadow/live difference is the mutate fn injected into
+  `idempotent_mutate(do_mutate=…)`: shadow injects `shadow_mutate_fn` (logs
+  "would PATCH /products/{id} with {diff}", records); M-DIMS-3 injects the real
+  `_mutate` behind `write_enabled` + sandbox allow-list — **no surface rebuild**.
+- **The read is real + read-only:** one `GET /products/{id}` resolves the target's
+  customer id (for the guard) and current dims (for the diff). It uses the normal
+  read path and **must not flip `write_enabled`** (W4 discipline). GET and PATCH
+  share `/products/{id}`.
+- **Depends on:** M-DIMS-1, W-phase (W0–W5, complete on master 89e00d8).
+- **Done when:** shadow path shows correct diffs for sandbox SKUs; approve composes
+  the full gate chain. **The defining test:** spy `_mutate`, drive a full approve in
+  shadow, assert **0 `_mutate` calls** and the recorder fired. **Gate test:** a
+  non-allow-listed target is refused **in shadow** (the guard isn't bypassed because
+  nothing writes). **Read test:** the read path doesn't touch the write gate. **CC
+  mocked.**
 - **Writes CC:** no.
 
 ### M-DIMS-3 — `dims-sandbox-roundtrip`  *(FIRST REAL CC WRITE)*
