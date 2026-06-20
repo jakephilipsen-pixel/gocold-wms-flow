@@ -51,7 +51,7 @@ against the sandbox.
   correct. **CC mocked.**
 - **Writes CC:** no.
 
-### W3 — `cc-write-customer-guard`  *(the §0 guard rail — most safety-critical)*
+### W3 — `cc-write-customer-guard`  🟨 In progress (`feature/write-spine-w3`)  *(the §0 guard rail — most safety-critical)*
 - **What:** before any mutate, resolve the target object's customer id and assert
   it ∈ allow-list. Not in list → refuse, log offending id.
 - **Depends on:** W0, W1.
