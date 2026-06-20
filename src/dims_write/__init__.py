@@ -14,6 +14,21 @@ from .approve import (
     DIM_FIELDS,
     PRODUCT_PATH,
 )
+from .roundtrip import (
+    live_mutate_fn,
+    assert_sandbox_only,
+    gather_active_sandbox_candidates,
+    select_writable_sandbox_sku,
+    run_sandbox_roundtrip,
+    SandboxCandidate,
+    TargetSelection,
+    HardStopInfo,
+    RoundtripReport,
+    DimsRoundtripError,
+    DimsRoundtripRefused,
+    NoWritableSandboxSku,
+    DimsReadBackMismatch,
+)
 
 __all__ = [
     "approve_dims_write",
@@ -23,4 +38,17 @@ __all__ = [
     "ProductDimsRead",
     "DIM_FIELDS",
     "PRODUCT_PATH",
+    "live_mutate_fn",
+    "assert_sandbox_only",
+    "gather_active_sandbox_candidates",
+    "select_writable_sandbox_sku",
+    "run_sandbox_roundtrip",
+    "SandboxCandidate",
+    "TargetSelection",
+    "HardStopInfo",
+    "RoundtripReport",
+    "DimsRoundtripError",
+    "DimsRoundtripRefused",
+    "NoWritableSandboxSku",
+    "DimsReadBackMismatch",
 ]
