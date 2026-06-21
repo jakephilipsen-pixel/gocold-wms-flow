@@ -5,7 +5,8 @@ The deliberate, human-confirmed run. Generalises the single M-DIMS-3 round-trip 
 whole active sandbox set via ``run_sandbox_bulk``: build the full plan, show ONE batch
 hard stop, require a single ``go``, then write + read-back verify each SKU — FAIL-FAST on
 the first failure, PACED so the rate limiter is never tripped. SANDBOX ONLY
-(``assert_sandbox_only`` refuses any non-sandbox allow-list).
+(``assert_write_target_allowed`` refuses any non-sandbox base allow-list; this script
+does NOT arm ``CC_LIVE_PROMOTION``, so the live Forage id stays unwritable).
 
     python scripts/run_dims_bulk_sandbox.py --dims-path data/dims/dims_2026-05-13.xlsx
 

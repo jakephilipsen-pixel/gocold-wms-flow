@@ -11,9 +11,9 @@ Safety posture (Jake's decisions):
     SKUs already written are known-good (each read-back verified), the rest untouched.
     No rollback — already-written correct dims are harmless. A re-run resumes via W4
     idempotency: the already-correct SKUs no-op.
-  - SANDBOX ONLY. ``assert_sandbox_only`` refuses unless the allow-list is exactly the
-    sandbox singleton — the live Forage id is necessarily absent. M-DIMS-4 does NOT
-    touch the allow-list; live promotion is a separate, separately-approved step.
+  - SANDBOX ONLY. ``assert_write_target_allowed`` refuses unless the base allow-list is
+    exactly the sandbox singleton. M-DIMS-4 does NOT arm ``CC_LIVE_PROMOTION``, so the live
+    Forage id stays unwritable; live promotion is a separate, separately-approved step.
   - Rate-limited through W5 and PACED: writes are spaced by ``pace_seconds`` so a
     sustained batch stays under the per-endpoint ceiling instead of tripping it (the
     limiter rejects, it does not queue — so the loop, not the limiter, does the waiting).
@@ -35,7 +35,7 @@ from cc_client.write_rate_limit import MutateRateLimiter, DEFAULT_CEILING_PER_MI
 
 from .approve import read_product_for_dims, _is_writable_value, DIM_FIELDS, PRODUCT_PATH
 from .roundtrip import (
-    assert_sandbox_only,
+    assert_write_target_allowed,
     gather_active_sandbox_candidates,
     write_and_verify,
     SandboxCandidate,
@@ -149,7 +149,7 @@ def run_sandbox_bulk(
 ) -> BulkReport:
     """Soak the whole active sandbox set through the gated dims write, fail-fast.
 
-    1. PRECONDITIONS — ``assert_sandbox_only`` + ``write_enabled`` (refuse before any read).
+    1. PRECONDITIONS — ``assert_write_target_allowed`` + ``write_enabled`` (refuse before any read).
     2. PLAN — read every candidate, bucket writable / no-op / skipped.
     3. BATCH HARD STOP — ``confirm(plan)``; no ``go`` -> abort, zero writes.
     4. LOOP — for each writable SKU: pace, then ``write_and_verify`` through the full gate
@@ -157,7 +157,7 @@ def run_sandbox_bulk(
        what is written (known-good) and what is untouched.
     """
     # 1. preconditions — refuse before any read or write.
-    assert_sandbox_only(config)
+    assert_write_target_allowed(config)
     if not client.write_enabled:
         raise DimsRoundtripRefused("client.write_enabled is False — refusing to start the bulk soak")
 

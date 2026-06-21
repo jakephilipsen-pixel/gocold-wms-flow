@@ -63,6 +63,27 @@ def test_live_forage_refused_under_default_config():
         verify_customer_allowed(LIVE_FORAGE_CUSTOMER_ID, WriteConfig())
 
 
+# ---------- M-DIMS-5a: the guard re-checks the live target against the promotion flag ----------
+
+def test_live_forage_allowed_only_when_promotion_armed():
+    # The W3 guard gates the live id by the CC_LIVE_PROMOTION flag (via is_customer_allowed):
+    # refused when unset, cleared when armed. This is the per-write re-check that makes the
+    # named live gate real — even at write time, not just at run start.
+    unarmed = WriteConfig(write_enabled=True, write_secret="valid", live_promotion=False)
+    armed = WriteConfig(write_enabled=True, write_secret="valid", live_promotion=True)
+
+    with pytest.raises(CartonCloudCustomerNotAllowed):
+        verify_customer_allowed(LIVE_FORAGE_CUSTOMER_ID, unarmed)
+    assert verify_customer_allowed(LIVE_FORAGE_CUSTOMER_ID, armed) is None
+
+
+def test_promotion_flag_does_not_widen_to_other_customers():
+    # Arming live promotion admits ONLY the live Forage id — not some other unknown customer.
+    armed = WriteConfig(write_enabled=True, write_secret="valid", live_promotion=True)
+    with pytest.raises(CartonCloudCustomerNotAllowed):
+        verify_customer_allowed("00000000-0000-0000-0000-000000000000", armed)
+
+
 # ---------- sandbox passes, unknown refuses ----------
 
 def test_sandbox_customer_passes():
