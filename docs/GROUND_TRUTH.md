@@ -23,19 +23,19 @@ issues a mutating call to CC.
 | **Stock / Slotting** | **partial** | y — SOH report-run `get_sku_locations` (`queries.py`), slotting analysis (`src/analysis/slotting.py`, `zoning.py`), locations via XLS loader (`src/locations/cc_loader.py`) | **n** — analysis only; output is CSV for manual import to CC | pass — `test_soh_sku_locations` (7), `test_soh_location_candidates` (8), `test_sku_locations` (3) | 9c53a99 |
 | **Pick waves** | **built (read-only)** | y — live wave generation off SOH (`src/wave_runner.py`, `src/analysis/wave_picks.py`), web console `src/web/` | **n** — output is PDF/CSV pick sheets only (`src/output/`) | pass — `test_wave_runner` (13), `test_wave_consolidation` (7), `test_carton_split` (13), `test_carton_pick_locations` (11), `test_web` (22), `test_csv_picksheet` (5), `test_pdf_picksheet` (4) | 9c53a99 |
 | **Dispatch** | **built (read-only, predict-to-run)** | y — consignment-history learning + prediction (`src/dispatch/`), web console `src/web_dispatch/` | **n / unbuilt** — `CartonCloudSink` exists but refuses + `NotImplementedError` (see §2.4) | pass — `test_dispatch_*` (9 files, ~34 tests), `test_web_dispatch` (12), `test_build_dispatch` (1) | 9c53a99 |
-| **Dims** | **built (CC write in-repo; live-proven, sandbox only)** | y — warehouse-products read (dims under v8); worklist/reconciliation tooling (`src/analysis/dims_worklist*.py`, `dims_measuring_sheet.py`, `dim_loader.py`) | **y, IN THIS REPO** — `src/dims_write/` issues a real `PATCH /warehouse-products/{id}` through the W0–W5 gate chain + human hard stop (§2.5). **First live write LANDED — M-DIMS-3, 21 Jun 2026** (sandbox `sHL-BWC`, full L/W/H+weight, read-back verified). Sandbox-only (allow-list gated); live Forage not yet written | pass — `test_dims_shadow_approve` (15), `test_dims_sandbox_roundtrip` (21), `test_dims_worklist` (10), `test_dims_worklist_xlsx` (5), `test_dims_measuring_sheet` (4); **`test_dim_loader` still has 1 FAILING test** (see §4) | 327fab8 |
+| **Dims** | **built (CC write in-repo; live-proven single + sandbox soak)** | y — warehouse-products read (dims under v8); worklist/reconciliation tooling (`src/analysis/dims_worklist*.py`, `dims_measuring_sheet.py`, `dim_loader.py`) | **y, IN THIS REPO** — `src/dims_write/` issues a real `PATCH /warehouse-products/{id}` through the W0–W5 gate chain + human hard stop (§2.5). **M-DIMS-3** landed the first live write (21 Jun 2026, sandbox `sHL-BWC`); **M-DIMS-4** (`bulk.py`) then soaked the WHOLE active sandbox set — **43 written + read-back verified, 1 no-op, 2 skipped = all 46** (21 Jun 2026) — reusing the same path in a paced, fail-fast loop. Sandbox-only (allow-list gated); live Forage not yet written | pass — `test_dims_shadow_approve` (15), `test_dims_sandbox_roundtrip` (21), `test_dims_bulk` (7), `test_dims_worklist` (10), `test_dims_worklist_xlsx` (5), `test_dims_measuring_sheet` (4); **`test_dim_loader` still has 1 FAILING test** (see §4) | ffb2170 |
 
-**Aggregate test status on `feature/m-dims-3-v8-dims-write` (PR #17, where the M-DIMS-3
-write code lives): 325 passed, 1 failed** (full suite, local data present).
+**Aggregate test status on `master` @ `ffb2170` (M-DIMS-3 + M-DIMS-4 both merged):
+332 passed, 1 failed** (full suite, local data present).
 The one failure is `test_dim_loader.py::test_june_ods_template_loads`, a fixture/data
 mismatch (`cartons-per-pallet` column absent from a capture template), **not** a
 write-safety regression.
 
 **Test baseline is branch- and environment-dependent — record the true green to keep
 regressions detectable:**
-- **`master` (pre-PR-#17), full local data: 193 passed, 1 failed** (same known
-  `test_dim_loader` failure). The M-DIMS-3 v8 write branch adds its dims-write suites on
-  top → **325 passed, 1 failed** at HEAD `327fab8`.
+- **`master` progression, full local data, same known `test_dim_loader` failure:**
+  193 passed (pre-M-DIMS-3) → 325 (PR #17, M-DIMS-3 v8 write) → **332 passed at `ffb2170`**
+  (PR #18 adds the 7 M-DIMS-4 `test_dims_bulk` cases).
 - **`test_wave_runner.py` is data-dependent:** several of its tests need the local
   `data/` parquet fixtures (gitignored: `data/raw/` etc.). They **pass with the real
   data present** and **error on a data-less checkout** — an environment artifact, NOT
@@ -112,21 +112,29 @@ resp = client._mutate("PATCH", path, approved=True, json=ops, headers=headers)
   absent** — and the customer-guard (W3) re-checks the read-back target's customer id on
   every write. A human must type `go` at the hard stop; the write is read back and
   verified afterwards.
-- **Exercised:** landed once, live — M-DIMS-3, sandbox `sHL-BWC`, 21 Jun 2026
-  (`255×230×150 / 2.2 kg`, read-back verified under v8). No live-Forage write has occurred,
-  and none is possible without a deliberate allow-list change off the sandbox singleton.
+- **Exercised live (sandbox only):** M-DIMS-3 landed one SKU (`sHL-BWC`,
+  `255×230×150 / 2.2 kg`, read-back verified under v8, 21 Jun 2026); **M-DIMS-4**
+  (`src/dims_write/bulk.py` `run_sandbox_bulk`) then looped this SAME path —
+  `write_and_verify` → `_mutate` per SKU, ONE batch hard stop, fail-fast, paced through W5 —
+  over the whole active sandbox set: **43 written + read-back verified, 1 no-op, 2 skipped =
+  all 46** (21 Jun 2026). It adds NO new write site or wire shape. No live-Forage write has
+  occurred, and none is possible without a deliberate allow-list change off the sandbox singleton.
 
 ### 2.6 Lock test
 `tests/test_read_only_guard.py` (22 tests, passing) asserts the gate behaviour;
 `test_dims_shadow_approve.py` (15) + `test_dims_sandbox_roundtrip.py` (21) assert the
-dims-write chain, the sandbox-only refusal, and that shadow never calls `_mutate`.
+dims-write chain, the sandbox-only refusal, and that shadow never calls `_mutate`;
+`test_dims_bulk.py` (7) asserts the M-DIMS-4 batch hard stop, fail-fast, the idempotent
+re-run (zero PATCHes), the paced limiter (not bypassed), and the sandbox-only refusal.
 
-**Summary:** the Python repo now has exactly **one** business-data write path — the dims
-`PATCH` to a warehouse-product UoM (§2.5) — and it has run once, against the **sandbox**
-customer, through the full gate chain + human hard stop, read-back verified. It is
-**default-closed and sandbox-only**: the live Forage id is absent from the allow-list and
-`assert_sandbox_only` refuses any non-sandbox allow-list. Other non-GET traffic is search
-reads (2.2) and SOH report-run creation (2.3). Dispatch write-back (2.4) is refused and unbuilt.
+**Summary:** the Python repo has exactly **one** business-data write path — the dims `PATCH`
+to a warehouse-product UoM (§2.5); M-DIMS-4 loops it but adds no new write site. It has run
+live against the **sandbox** customer only — one SKU (M-DIMS-3) then the full active set
+(M-DIMS-4, 43 written) — each through the full gate chain + human hard stop, read-back
+verified. It is **default-closed and sandbox-only**: the live Forage id is absent from the
+allow-list and `assert_sandbox_only` refuses any non-sandbox allow-list. Other non-GET
+traffic is search reads (2.2) and SOH report-run creation (2.3). Dispatch write-back (2.4)
+is refused and unbuilt.
 
 ---
 
@@ -214,10 +222,12 @@ id was checked against CartonCloud with a **read-only** scoped query
 | Active code shape | `s`-prefixed (`sRK-`, `sGP-`, `sHL-`, `sRD-`, `sTC-`…) |
 | Live contrast | `d4810e1e-…` → "The Forage Company", codes `FP-*`/`HI-*` — the customer-id filter genuinely discriminates |
 
-**Status: WRITE-PROVEN (M-DIMS-3, 21 Jun 2026).** The CC round-trip proof has landed —
-one real `PATCH` against one sandbox SKU (`sHL-BWC`), read back and verified under v8
-(§2.5). The sandbox id is now confirmed **end-to-end** (read *and* gated write), not
-config-only. The allow-list still admits this customer's products and refuses all others.
+**Status: WRITE-PROVEN AT SCALE (M-DIMS-3 then M-DIMS-4, 21 Jun 2026).** M-DIMS-3 landed one
+real `PATCH` (`sHL-BWC`, read-back verified under v8, §2.5); M-DIMS-4 then soaked the whole
+active set — **43 written + verified, 1 no-op, 2 skipped = all 46** — through the same gated,
+paced, fail-fast loop. The sandbox id is confirmed **end-to-end at batch scale** (read *and*
+gated writes), not config-only. The allow-list still admits this customer's products and
+refuses all others.
 
 Caveat carried into the spine: the customer-id allow-list (WRITE_ENABLEMENT_PLAN
 §2.3) admits **all 1111** products under this customer, not just the 46 active —
@@ -228,19 +238,18 @@ customer-id safety boundary, not the boundary itself.
 
 ## Footer
 
-- **Branch:** updated on `feature/m-dims-3-v8-dims-write` (**PR #17**, base `master`,
-  **open / pending merge**). The M-DIMS-3 v8 write code lives here, **not yet on `master`**
-  (`master` still carries the pre-rework `PRODUCT_PATH = "/products/{id}"` constant at
-  `f6f7ee6`) — so this record is true at the HEAD below and becomes true on `master` the
-  moment #17 merges. Other spine/worklist code remains on its own feature branches per
-  earlier footers.
-- **Re-verified at `327fab8`** on `feature/m-dims-3-v8-dims-write` (`grep` over `src/` +
-  full `pytest`), 2026-06-21: the **§1 Dims row**, the **§1 aggregate test count**, all of
-  **§2** (write-safety, incl. drifted line refs), and **§5** (now write-proven). §3–§4
-  carried forward and corrected where the M-DIMS-3 landing changed them. The other four §1
-  surface rows (Receiving, Stock, Pick waves, Dispatch) are **unchanged from `9c53a99` and
-  were NOT re-run this pass** — their `Last-verified` column still reads `9c53a99`.
-- **Full suite at this HEAD:** **325 passed, 1 failed** — the one failure is the known
+- **Branch:** refreshed on `docs/ground-truth-m-dims-4` (docs-only, base `master`). The
+  M-DIMS-3 (PR #17) and M-DIMS-4 (PR #18) write code is **now merged to `master`** —
+  `PRODUCT_PATH = "/warehouse-products/{id}"` and `src/dims_write/bulk.py` are both present
+  at `ffb2170` — so this record is true at `master` itself. Other spine/worklist code
+  remains on its own feature branches per earlier footers.
+- **Re-verified at `ffb2170`** on `master` (`grep` over `src/` + full `pytest`), 2026-06-21:
+  the **§1 Dims row** (now incl. the M-DIMS-4 sandbox soak), the **§1 aggregate test count**,
+  all of **§2** (write-safety — still exactly one write path; M-DIMS-4 reuses it), and **§5**.
+  §3–§4 carried forward. The other four §1 surface rows (Receiving, Stock, Pick waves,
+  Dispatch) are **unchanged from `9c53a99` and were NOT re-run this pass** — their
+  `Last-verified` column still reads `9c53a99`.
+- **Full suite at this HEAD:** **332 passed, 1 failed** — the one failure is the known
   `test_dim_loader::test_june_ods_template_loads` data-fixture mismatch (local `data/`
   present); not a write-safety regression.
 - **dim-capture-app repo HEAD (external):** `8e3b065` on `main` @ `github.com/jakephilipsen-pixel/dim-capture-app`
