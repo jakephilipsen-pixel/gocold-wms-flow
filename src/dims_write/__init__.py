@@ -16,6 +16,7 @@ from .approve import (
 )
 from .roundtrip import (
     live_mutate_fn,
+    write_and_verify,
     assert_sandbox_only,
     gather_active_sandbox_candidates,
     select_writable_sandbox_sku,
@@ -30,6 +31,13 @@ from .roundtrip import (
     NoWritableSandboxSku,
     DimsReadBackMismatch,
 )
+from .bulk import (
+    build_bulk_plan,
+    run_sandbox_bulk,
+    BulkPlan,
+    BulkPlanItem,
+    BulkReport,
+)
 
 __all__ = [
     "approve_dims_write",
@@ -40,6 +48,7 @@ __all__ = [
     "DIM_FIELDS",
     "PRODUCT_PATH",
     "live_mutate_fn",
+    "write_and_verify",
     "assert_sandbox_only",
     "gather_active_sandbox_candidates",
     "select_writable_sandbox_sku",
@@ -53,4 +62,9 @@ __all__ = [
     "DimsRoundtripRefused",
     "NoWritableSandboxSku",
     "DimsReadBackMismatch",
+    "build_bulk_plan",
+    "run_sandbox_bulk",
+    "BulkPlan",
+    "BulkPlanItem",
+    "BulkReport",
 ]

@@ -85,6 +85,57 @@ def live_mutate_fn(
     return _fn
 
 
+# ---------- shared write+verify: one SKU through the chain, then read-back ----------
+
+def write_and_verify(
+    *,
+    client: CartonCloudClient,
+    config: WriteConfig,
+    product_id: str,
+    code: str,
+    uom: str,
+    desired_dims: dict[str, Any],
+    approval_token: str | None,
+    rate_limiter: MutateRateLimiter,
+    registry: ObjectLockRegistry | None = None,
+) -> dict[str, Any]:
+    """Write one SKU's dims through the full gate chain, then GET and verify the land.
+
+    The single write+verify both M-DIMS-3 (one SKU) and M-DIMS-4 (the bulk soak) use —
+    same wire shape, same guarantees. Runs ``approve_dims_write`` (rate-limit → read →
+    customer-guard → authz → idempotent-mutate, the live ``_mutate`` injected), then
+    re-reads and compares. Returns the read-back current dims on success; raises
+    ``DimsReadBackMismatch`` if any written field didn't land. ``desired_dims`` must be
+    pre-filtered (no NaN/None) so the read-back only checks what was actually sent.
+    """
+    approve_dims_write(
+        product_id,
+        client=client,
+        config=config,
+        desired_dims=desired_dims,
+        mutate_fn=live_mutate_fn(client, product_id, uom),
+        rate_limiter=rate_limiter,
+        approval_token=approval_token,
+        registry=registry,
+    )
+    after = read_product_for_dims(client, product_id)
+    mismatched = {
+        f: (desired_dims[f], after.current_dims.get(f))
+        for f in desired_dims
+        if after.current_dims.get(f) != desired_dims[f]
+    }
+    if mismatched:
+        log.error(
+            "READ-BACK MISMATCH for %s (%s): wrote %s, read back %s; mismatched=%s",
+            product_id, code, desired_dims, after.current_dims, mismatched,
+        )
+        raise DimsReadBackMismatch(
+            f"read-back mismatch for {code}: wrote {desired_dims}, "
+            f"read back {after.current_dims}; mismatched fields {mismatched}"
+        )
+    return after.current_dims
+
+
 # ---------- preconditions: refuse to start unless sandbox-only ----------
 
 def assert_sandbox_only(config: WriteConfig) -> None:
@@ -336,37 +387,22 @@ def run_sandbox_roundtrip(
 
     # STEP 3 — PATCH via the live fn through the full chain, then read-back verify.
     log.info("M-DIMS-3 GO — PATCHing %s (%s) with %s", selection.product_id, selection.code, selection.diff)
-    approve_dims_write(
-        selection.product_id,
+    after_dims = write_and_verify(
         client=client,
         config=config,
+        product_id=selection.product_id,
+        code=selection.code,
+        uom=selection.uom,
         desired_dims=selection.desired_dims,
-        mutate_fn=live_mutate_fn(client, selection.product_id, selection.uom),
-        rate_limiter=rate_limiter or MutateRateLimiter(),
         approval_token=approval_token,
+        rate_limiter=rate_limiter or MutateRateLimiter(),
         registry=registry,
     )
 
-    after = read_product_for_dims(client, selection.product_id)
-    mismatched = {
-        f: (selection.desired_dims[f], after.current_dims.get(f))
-        for f in selection.desired_dims
-        if after.current_dims.get(f) != selection.desired_dims[f]
-    }
-    if mismatched:
-        log.error(
-            "M-DIMS-3 READ-BACK MISMATCH for %s (%s): wrote %s, read back %s; mismatched=%s",
-            selection.product_id, selection.code, selection.desired_dims, after.current_dims, mismatched,
-        )
-        raise DimsReadBackMismatch(
-            f"read-back mismatch for {selection.code}: wrote {selection.desired_dims}, "
-            f"read back {after.current_dims}; mismatched fields {mismatched}"
-        )
-
-    log.info("M-DIMS-3 LANDED — %s (%s) dims now %s", selection.product_id, selection.code, after.current_dims)
+    log.info("M-DIMS-3 LANDED — %s (%s) dims now %s", selection.product_id, selection.code, after_dims)
     return RoundtripReport(
         product_id=selection.product_id, code=selection.code,
         current_dims=selection.current_dims, desired_dims=selection.desired_dims,
         diff=selection.diff, endpoint=endpoint, verb="PATCH",
-        written=True, aborted=False, landed=True, read_back_dims=after.current_dims, skipped=skipped,
+        written=True, aborted=False, landed=True, read_back_dims=after_dims, skipped=skipped,
     )
