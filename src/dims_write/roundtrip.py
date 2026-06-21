@@ -4,8 +4,8 @@ Flips the M-DIMS-2 injection seam from `shadow_mutate_fn` to the real `_mutate`.
 surface rebuild — `approve_dims_write`, the gate chain, and the M-DIMS-2 tests are
 unchanged. M-DIMS-3 adds:
 
-  - `live_mutate_fn` — the live `do_mutate`: PATCH /products/{id} via W1's `_mutate`,
-    exactly once with the diff. The single value that differs from shadow mode.
+  - `live_mutate_fn` — the live `do_mutate`: PATCH /warehouse-products/{id} (v8) via
+    W1's `_mutate`, exactly once with the diff. The single value that differs from shadow.
   - `assert_sandbox_only` — refuse to start unless writes are enabled, a secret is set,
     and the allow-list is EXACTLY the sandbox singleton (so the live Forage id is
     necessarily absent — asserted positively, without this module ever naming it).

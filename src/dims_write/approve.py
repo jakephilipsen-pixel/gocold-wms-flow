@@ -7,16 +7,17 @@ by the mutate fn injected into ``idempotent_mutate(do_mutate=…)``
 
     rate-limit (W5) → read (GET) → customer-guard (W3) → authz (W2) → idempotent_mutate (W4)
 
-- **Shadow (M-DIMS-2):** inject ``shadow_mutate_fn(product_id)`` — it logs
-  ``"would PATCH /products/{id} with {diff}"`` and records; ``_mutate`` is never called.
+- **Shadow (M-DIMS-2):** inject ``shadow_mutate_fn(product_id, uom)`` — it logs
+  ``"would PATCH /warehouse-products/{id} with {ops}"`` and records; ``_mutate`` is
+  never called.
 - **Live (M-DIMS-3):** inject a fn that calls W1's real ``_mutate``, behind
   ``write_enabled`` + the sandbox allow-list — no surface rebuild.
 
 The current-dims GET is the one real, read-only CC interaction in shadow. It goes
 through the normal read path (``client.get``) and never flips ``write_enabled`` — the
-same discipline as the W4 diff read. GET and PATCH share ``/products/{id}`` so the dims
-read are the dims written; units are mm (L/W/H) / kg (weight), no conversion
-(dim-capture-app carry-over).
+same discipline as the W4 diff read. GET and PATCH share ``/warehouse-products/{id}``
+(under ``Accept-Version: 8``) so the dims read are the dims written; units are mm
+(L/W/H) / kg (weight), no conversion (dim-capture-app carry-over).
 """
 from __future__ import annotations
 
