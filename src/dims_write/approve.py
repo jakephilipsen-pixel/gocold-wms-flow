@@ -21,8 +21,9 @@ read are the dims written; units are mm (L/W/H) / kg (weight), no conversion
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from cc_client.client import CartonCloudClient
 from cc_client.write_config import WriteConfig
@@ -36,46 +37,108 @@ log = logging.getLogger(__name__)
 # The CC product dim fields, in mm (L/W/H) and kg (weight). No conversion.
 DIM_FIELDS = ("length", "width", "height", "weight")
 
-# GET current dims and PATCH new dims share this path (M-DIMS-1 carry-over).
-PRODUCT_PATH = "/products/{id}"
+# Dims live on the warehouse-product's unit-of-measure (api-docs.cartoncloud.com):
+# GET/PATCH share /warehouse-products/{id}; the dim fields hang off
+# unitOfMeasures.{uom}, and GET OMITS them when unset (so the read pulls from the
+# default UoM, not the top level). The earlier "/products/{id}" + top-level-dims
+# shape was the LEGACY app-API contract and 404s here ("Invalid product id").
+PRODUCT_PATH = "/warehouse-products/{id}"
+
+# CC accepts RFC-6902 JSON Patch on warehouse-products; Content-Type must declare it.
+JSON_PATCH_CONTENT_TYPE = "application/json-patch+json"
+
+# L/W/H are UoM fields ONLY in the warehouse-products v8 schema (per CC api docs). Under
+# the client default (v1) those fields don't exist, so a v1 PATCH 200s but SILENTLY DROPS
+# length/width/height (confirmed live 21 Jun 2026 — only `weight`, a v1 field, persisted).
+# So the dims read AND write must both run under v8.
+WP_ACCEPT_VERSION = "8"
+
+
+def _is_writable_value(v: Any) -> bool:
+    """Drop unset/NaN dims so we never PATCH a non-finite value (CC rejects NaN).
+
+    Captured weight is ~69% populated, so a desired dict can carry ``NaN`` weight;
+    ``json`` would serialise that to invalid ``NaN`` and CC would reject the whole
+    PATCH. ``weight == 0`` is legitimate and kept.
+    """
+    if v is None:
+        return False
+    if isinstance(v, float) and not math.isfinite(v):
+        return False
+    return True
+
+
+def build_dims_patch(
+    product_id: str, uom: str, diff: Mapping[str, Any]
+) -> tuple[str, list[dict[str, Any]], dict[str, str]]:
+    """Build the (path, JSON-Patch body, headers) for a UoM dims PATCH.
+
+    The single place that knows CC's dims-write wire shape, so shadow and live send
+    the *identical* thing. ``diff`` is the flat ``{dim: value}`` of changed fields
+    (from ``idempotent_mutate``); each becomes a ``replace`` op at
+    ``/unitOfMeasures/{uom}/{dim}``. Values are written as captured (mm L/W/H, kg
+    weight) — no conversion.
+    """
+    if not uom:
+        raise ValueError("cannot build a dims PATCH without a target unit-of-measure")
+    path = PRODUCT_PATH.format(id=product_id)
+    # `add`, not `replace`: a freshly-captured SKU has UNSET dims (GET omits them), and
+    # RFC-6902 `replace` 422s on a path that doesn't yet exist ("Path not exists").
+    # `add` creates the member when absent and replaces it when present — correct for
+    # both an empty SKU and a re-run.
+    ops = [
+        {"op": "add", "path": f"/unitOfMeasures/{uom}/{field}", "value": value}
+        for field, value in diff.items()
+    ]
+    return path, ops, {
+        "Content-Type": JSON_PATCH_CONTENT_TYPE,
+        "Accept-Version": WP_ACCEPT_VERSION,
+    }
 
 
 @dataclass(frozen=True)
 class ProductDimsRead:
-    """The one read: the target's customer id (for the guard) + its current dims."""
+    """The one read: the target's customer id (guard), default UoM, + current dims."""
 
     customer_id: str | None
+    uom: str | None
     current_dims: dict[str, Any]
     raw: dict[str, Any]
 
 
 def read_product_for_dims(client: CartonCloudClient, product_id: str) -> ProductDimsRead:
-    """GET the product and pull out its customer id and current dims.
+    """GET the warehouse-product and pull its customer id, default UoM, current dims.
 
-    A plain read through ``client.get`` — it never flips ``write_enabled``. The shape
-    (top-level dim fields, ``customer.id``) is verified against the real sandbox at
-    M-DIMS-3's read-back step.
+    A plain read through ``client.get`` — it never flips ``write_enabled``. Dims hang
+    off ``unitOfMeasures.{defaultUnitOfMeasure}`` and are OMITTED by GET when unset, so
+    a freshly-captured SKU reads ``{length: None, ...}`` — exactly the empty state a
+    first write fills. ``customer.id`` drives the customer-guard. Confirmed against the
+    real sandbox at M-DIMS-3's read-back step.
     """
-    raw = client.get(PRODUCT_PATH.format(id=product_id))
+    raw = client.get(PRODUCT_PATH.format(id=product_id), headers={"Accept-Version": WP_ACCEPT_VERSION})
     customer_id = (raw.get("customer") or {}).get("id")
-    current_dims = {field: raw.get(field) for field in DIM_FIELDS}
-    return ProductDimsRead(customer_id=customer_id, current_dims=current_dims, raw=raw)
+    uom = raw.get("defaultUnitOfMeasure")
+    uom_obj = (raw.get("unitOfMeasures") or {}).get(uom) or {}
+    current_dims = {field: uom_obj.get(field) for field in DIM_FIELDS}
+    return ProductDimsRead(customer_id=customer_id, uom=uom, current_dims=current_dims, raw=raw)
 
 
-def shadow_mutate_fn(product_id: str, *, sink: Callable[[str], None] | None = None):
+def shadow_mutate_fn(product_id: str, uom: str, *, sink: Callable[[str], None] | None = None):
     """Build the SHADOW mutate fn for a product: log + record, never write.
 
-    Injected as ``do_mutate`` in shadow mode. It receives the diff (the would-PATCH
-    body), logs ``"would PATCH /products/{id} with {diff}"`` and appends to
-    ``.records``. M-DIMS-3 swaps this single value for the real ``_mutate``.
+    Injected as ``do_mutate`` in shadow mode. It receives the diff (changed dims) and
+    builds the *exact* PATCH that live would send via ``build_dims_patch`` — so a shadow
+    run previews the real ``PATCH /warehouse-products/{id}`` JSON-Patch body verbatim. It
+    logs that and appends to ``.records``; M-DIMS-3 swaps this single value for the real
+    ``_mutate``.
     """
     records: list[dict[str, Any]] = []
 
     def _recorder(diff: dict[str, Any]) -> dict[str, Any]:
-        message = f"[SHADOW] would PATCH {PRODUCT_PATH.format(id=product_id)} with {diff}"
-        (sink or log.info)(message)
-        records.append({"product_id": product_id, "diff": diff})
-        return {"shadow": True, "product_id": product_id, "would_patch": diff}
+        path, ops, _ = build_dims_patch(product_id, uom, diff)
+        (sink or log.info)(f"[SHADOW] would PATCH {path} with {ops}")
+        records.append({"product_id": product_id, "uom": uom, "path": path, "ops": ops, "diff": diff})
+        return {"shadow": True, "product_id": product_id, "uom": uom, "would_patch": ops}
 
     _recorder.records = records  # type: ignore[attr-defined]
     return _recorder
@@ -128,7 +191,11 @@ def approve_dims_write(
 
     # 5. idempotent_mutate (W4) — diff vs the already-read current (one GET total);
     #    empty diff no-ops; otherwise the injected mutate fn fires with the diff.
-    desired = {field: desired_dims[field] for field in DIM_FIELDS if field in desired_dims}
+    desired = {
+        field: desired_dims[field]
+        for field in DIM_FIELDS
+        if field in desired_dims and _is_writable_value(desired_dims[field])
+    }
     result = idempotent_mutate(
         product_id,
         read_current=lambda: read.current_dims,
