@@ -35,6 +35,7 @@ from dims_write.approve import (
     approve_dims_write,
     shadow_mutate_fn,
     read_product_for_dims,
+    build_dims_patch,
     DimsApproveResult,
     DIM_FIELDS,
 )
@@ -73,7 +74,7 @@ class FakeProductTransport:
         self.calls: list[dict] = []
 
     def request(self, method, url, *, params=None, json=None, headers=None, timeout=None):
-        self.calls.append({"method": method, "url": url, "json": json})
+        self.calls.append({"method": method, "url": url, "json": json, "headers": headers or {}})
         if method == "GET":
             return httpx.Response(200, json=self.product)
         return httpx.Response(200, json={"ok": True})
@@ -83,17 +84,27 @@ class FakeProductTransport:
         return [c["method"] for c in self.calls]
 
 
-def _sandbox_product(*, customer_id=SANDBOX_CUSTOMER_ID, length=100, width=50, height=30, weight=12):
+UOM = "EA"
+
+
+def _sandbox_product(*, customer_id=SANDBOX_CUSTOMER_ID, uom=UOM, length=100, width=50, height=30, weight=12):
+    # Dims hang off the default UoM (api-docs.cartoncloud.com), not the top level.
     return {
         "id": "p1",
         "customer": {"id": customer_id},
         "details": {"active": True},
         "references": {"code": "s-FROZEN-PEAS"},
-        "length": length,
-        "width": width,
-        "height": height,
-        "weight": weight,
+        "defaultUnitOfMeasure": uom,
+        "unitOfMeasures": {
+            uom: {"baseQty": 1, "length": length, "width": width, "height": height, "weight": weight},
+        },
     }
+
+
+def _expected_record(diff, *, product_id="p1", uom=UOM):
+    """The shape shadow_mutate_fn records — built via the same helper live uses."""
+    path, ops, _ = build_dims_patch(product_id, uom, diff)
+    return {"product_id": product_id, "uom": uom, "path": path, "ops": ops, "diff": diff}
 
 
 def _client(*, write_enabled: bool = False) -> CartonCloudClient:
@@ -143,7 +154,7 @@ def test_shadow_approve_runs_full_chain_but_never_calls_mutate():
     client._http = transport
     mutate_calls = _spy_mutate(client)
 
-    recorder = shadow_mutate_fn("p1")
+    recorder = shadow_mutate_fn("p1", UOM)
     result = approve_dims_write(
         "p1",
         client=client,
@@ -157,7 +168,7 @@ def test_shadow_approve_runs_full_chain_but_never_calls_mutate():
     assert mutate_calls == [], "_mutate must NEVER be called in shadow mode"
     assert "PATCH" not in transport.methods, "no PATCH may reach the transport"
     assert result.no_op is False, "a real diff must drive the recorder"
-    assert recorder.records == [{"product_id": "p1", "diff": {"length": 120}}], (
+    assert recorder.records == [_expected_record({"length": 120})], (
         "the recorder fired with the would-PATCH diff"
     )
     assert result.diff == {"length": 120}
@@ -172,7 +183,7 @@ def test_non_allowlisted_target_refused_in_shadow():
     transport = FakeProductTransport(_sandbox_product(customer_id=LIVE_FORAGE_CUSTOMER_ID, length=100))
     client._http = transport
     mutate_calls = _spy_mutate(client)
-    recorder = shadow_mutate_fn("p1")
+    recorder = shadow_mutate_fn("p1", UOM)
 
     with pytest.raises(CartonCloudCustomerNotAllowed):
         approve_dims_write(
@@ -196,11 +207,11 @@ def test_rate_limit_is_composed_first():
     client = _client()
     transport = FakeProductTransport(_sandbox_product())
     client._http = transport
-    recorder = shadow_mutate_fn("p1")
+    recorder = shadow_mutate_fn("p1", UOM)
 
     limiter = MutateRateLimiter(per_minute=1, now=FakeClock())
     # spend the single token on this endpoint
-    limiter.check("/products/{id}")
+    limiter.check("/warehouse-products/{id}")
 
     with pytest.raises(CartonCloudWriteRateLimited):
         approve_dims_write(
@@ -223,7 +234,7 @@ def test_customer_guard_precedes_authz():
     # ran first this would raise CartonCloudWriteAuthFailed instead.
     client = _client()
     client._http = FakeProductTransport(_sandbox_product(customer_id=LIVE_FORAGE_CUSTOMER_ID))
-    recorder = shadow_mutate_fn("p1")
+    recorder = shadow_mutate_fn("p1", UOM)
 
     with pytest.raises(CartonCloudCustomerNotAllowed):
         approve_dims_write(
@@ -242,7 +253,7 @@ def test_authz_refuses_wrong_token():
     client = _client()
     client._http = FakeProductTransport(_sandbox_product())
     mutate_calls = _spy_mutate(client)
-    recorder = shadow_mutate_fn("p1")
+    recorder = shadow_mutate_fn("p1", UOM)
 
     with pytest.raises(CartonCloudWriteAuthFailed):
         approve_dims_write(
@@ -261,7 +272,7 @@ def test_authz_refuses_wrong_token():
 def test_authz_refuses_when_secret_unconfigured():
     client = _client()
     client._http = FakeProductTransport(_sandbox_product())
-    recorder = shadow_mutate_fn("p1")
+    recorder = shadow_mutate_fn("p1", UOM)
 
     with pytest.raises(CartonCloudWriteAuthNotConfigured):
         approve_dims_write(
@@ -286,7 +297,7 @@ def test_read_path_does_not_flip_write_enabled(write_enabled):
     client = _client(write_enabled=write_enabled)
     transport = FakeProductTransport(_sandbox_product(length=100))
     client._http = transport
-    recorder = shadow_mutate_fn("p1")
+    recorder = shadow_mutate_fn("p1", UOM)
 
     result = approve_dims_write(
         "p1",
@@ -300,7 +311,7 @@ def test_read_path_does_not_flip_write_enabled(write_enabled):
 
     assert client.write_enabled is write_enabled, "the read must not flip write_enabled"
     assert "GET" in transport.methods, "the current-dims read must happen"
-    assert recorder.records == [{"product_id": "p1", "diff": {"length": 120}}]
+    assert recorder.records == [_expected_record({"length": 120})]
 
 
 # ---------- read-before-write no-op ----------
@@ -309,7 +320,7 @@ def test_no_op_when_dims_already_match():
     client = _client()
     client._http = FakeProductTransport(_sandbox_product(length=100, width=50, height=30, weight=12))
     mutate_calls = _spy_mutate(client)
-    recorder = shadow_mutate_fn("p1")
+    recorder = shadow_mutate_fn("p1", UOM)
 
     result = approve_dims_write(
         "p1",
@@ -332,7 +343,7 @@ def test_no_op_when_dims_already_match():
 def test_diff_is_over_dim_fields_only():
     client = _client()
     client._http = FakeProductTransport(_sandbox_product(length=100, width=50, height=30, weight=12))
-    recorder = shadow_mutate_fn("p1")
+    recorder = shadow_mutate_fn("p1", UOM)
 
     result = approve_dims_write(
         "p1",
@@ -346,7 +357,7 @@ def test_diff_is_over_dim_fields_only():
     )
 
     assert result.diff == {"height": 45}
-    assert recorder.records == [{"product_id": "p1", "diff": {"height": 45}}]
+    assert recorder.records == [_expected_record({"height": 45})]
     assert set(DIM_FIELDS) == {"length", "width", "height", "weight"}
 
 
@@ -388,7 +399,7 @@ def test_result_shape():
         client=client,
         config=_cfg(),
         desired_dims={"length": 120},
-        mutate_fn=shadow_mutate_fn("p1"),
+        mutate_fn=shadow_mutate_fn("p1", UOM),
         rate_limiter=_fresh_limiter(),
         approval_token=SECRET,
     )
@@ -402,12 +413,12 @@ def test_result_shape():
 # ---------- shadow recorder logs the would-PATCH ----------
 
 def test_shadow_recorder_logs_would_patch(caplog):
-    recorder = shadow_mutate_fn("p1")
+    recorder = shadow_mutate_fn("p1", UOM)
     with caplog.at_level(logging.INFO, logger="dims_write.approve"):
         recorder({"length": 120})
     assert "would PATCH" in caplog.text
-    assert "/products/p1" in caplog.text
-    assert "length" in caplog.text
+    assert "/warehouse-products/p1" in caplog.text
+    assert "/unitOfMeasures/EA/length" in caplog.text
 
 
 # ---------- read adapter resolves customer id + dims ----------
@@ -417,8 +428,12 @@ def test_read_product_for_dims_extracts_customer_and_dims():
     client._http = FakeProductTransport(_sandbox_product(customer_id="cust-x", length=100, width=50, height=30, weight=12))
     read = read_product_for_dims(client, "p1")
     assert read.customer_id == "cust-x"
+    assert read.uom == UOM, "default UoM is surfaced for the PATCH target"
     assert read.current_dims == {"length": 100, "width": 50, "height": 30, "weight": 12}
     assert client.write_enabled is False  # read-only
+    # the read must run under v8 — that's the schema where L/W/H exist on the UoM
+    get_call = next(c for c in client._http.calls if c["method"] == "GET")
+    assert get_call["headers"].get("Accept-Version") == "8"
 
 
 # ---------- package export ----------

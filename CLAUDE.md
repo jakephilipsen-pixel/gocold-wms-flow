@@ -108,7 +108,16 @@ until the slotting logic has been validated against reality for a quarter.
 5. **Rate limit** of 30 req/min on outbound order create. Reads aren't
    capped that hard but be polite.
 6. **API version**: `Accept-Version: 1` for almost everything; warehouse
-   products supports `Accept-Version: 8` for the latest schema.
+   products supports `Accept-Version: 8` for the latest schema. **Carton dims
+   (L/W/H) on the UoM exist ONLY under v8** — a v1 PATCH returns 200 but
+   SILENTLY DROPS length/width/height (only `weight`, a v1 field, persists),
+   and v1/v8 even return different UoM objects (different ids). The validated
+   dims-write recipe (M-DIMS-3, landed live 21 Jun 2026): **PATCH
+   `/warehouse-products/{id}`** (NOT `/products/{id}` — that path is *transport
+   products* / carton classes and 404s "Invalid product id"), JSON-Patch
+   **`op:"add"`** (NOT `replace` — `replace` 422s "Path not exists" on an unset
+   dim) on `/unitOfMeasures/{uom}/{dim}`, headers `Accept-Version: 8` +
+   `Content-Type: application/json-patch+json`; read back under v8 to verify.
 7. **`/warehouse-locations/search` returns 404** (not 403) on this tenant —
    the path is not exposed on the public v1 API. This is NOT a missing read
    scope. Location data therefore comes from (a) CC's UI XLS export
@@ -155,10 +164,19 @@ until the slotting logic has been validated against reality for a quarter.
 - API client + extract + analysis all working end-to-end against real
   Forage data (validated 10 May 2026).
 - **Carton dim capture is DONE** (~409 SKUs, captured 12 May 2026 via the
-  Go Cold branded `capture_template.xlsx`). **The next blocker is dims→CC
-  sync** — getting captured dims into CartonCloud. That work lives in the
-  `dim-capture-app/` sub-project (modules 02 `cc-client` PATCH /products +
-  04 `dim-api`/syncService — both not yet built).
+  Go Cold branded `capture_template.xlsx`). **dims→CC sync: FIRST REAL WRITE
+  LANDED** (M-DIMS-3, 21 Jun 2026). One sandbox SKU (`sHL-BWC`) got full
+  L/W/H + weight written to CC and read-back verified, via `src/dims_write/`
+  (the W0–W5 gate chain → human hard stop → PATCH warehouse-products UoM under
+  v8 → read-back). Units confirmed correct via CC product download. The earlier
+  `dim-capture-app/` legacy-API approach (Bearer key, `/products` PATCH on
+  `app.cartoncloud.com.au/api/v1`) is **superseded** — the live OAuth2 API
+  writes dims natively (see gotcha #6 for the recipe). Remaining before the
+  live Forage rollout: build the all-~409-SKU loop (rate-limited) and
+  deliberately flip the `assert_sandbox_only` allow-list from sandbox→Forage
+  (it refuses to write to Forage until that approved change is made).
+  Run previews with `scripts/run_dims_shadow_validate.py` (no write); the
+  human-gated write is `scripts/run_dims_sandbox_roundtrip.py`.
 - Now that dims exist locally, next build:
     - Slotting recommendations: which SKU at which bay height
       (1500/1100/750mm) given (cube × velocity × replen frequency)

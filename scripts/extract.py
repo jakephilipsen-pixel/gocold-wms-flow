@@ -239,9 +239,35 @@ def main() -> int:
     # --- Products
     products: list[dict] = []
     if args.products:
-        print("pulling warehouse products (active)...")
+        # Orders filter by customer *name*, but the product search filters by
+        # customer *id*. Resolve name→id once so the customer name stays the
+        # single source of truth (no hardcoded UUID to drift). If no customer
+        # is set, fall back to the tenant-wide active pull.
+        customer_id: str | None = None
+        if args.customer_name:
+            try:
+                customers = client.get("/customers")
+            except CartonCloudError as e:
+                print(f"❌ couldn't list customers to resolve "
+                      f"{args.customer_name!r}: {e}", file=sys.stderr)
+                return 1
+            match = next(
+                (c for c in customers
+                 if c.get("name") == args.customer_name),
+                None,
+            )
+            if match is None:
+                print(f"❌ customer {args.customer_name!r} not found — refusing "
+                      f"to pull tenant-wide products. Check the name against "
+                      f"smoke_test output.", file=sys.stderr)
+                return 1
+            customer_id = match.get("id")
+            print(f"pulling warehouse products (active) for "
+                  f"{args.customer_name!r} ({customer_id})...")
+        else:
+            print("pulling warehouse products (active, tenant-wide)...")
         try:
-            for prod in search_warehouse_products(client):
+            for prod in search_warehouse_products(client, customer_id=customer_id):
                 products.append(_flatten_product(prod))
         except CartonCloudError as e:
             print(f"❌ product extract failed: {e}", file=sys.stderr)

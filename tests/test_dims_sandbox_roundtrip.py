@@ -53,12 +53,18 @@ class StatefulProductTransport:
         self.calls: list[dict] = []
 
     def request(self, method, url, *, params=None, json=None, headers=None, timeout=None):
-        self.calls.append({"method": method, "url": url, "json": json})
+        self.calls.append({"method": method, "url": url, "json": json, "headers": headers or {}})
         if method == "GET":
             return httpx.Response(200, json=dict(self.product))
         if method == "PATCH":
+            # json is an RFC-6902 patch: [{op:replace, path:/unitOfMeasures/EA/length, value:..}]
             if self.persist_patch and json:
-                self.product.update(json)
+                for op in json:
+                    parts = op["path"].strip("/").split("/")
+                    target = self.product
+                    for p in parts[:-1]:
+                        target = target.setdefault(p, {})
+                    target[parts[-1]] = op["value"]
             return httpx.Response(200, json=dict(self.product))
         return httpx.Response(200, json={"ok": True})
 
@@ -67,14 +73,21 @@ class StatefulProductTransport:
         return [c["method"] for c in self.calls]
 
 
-def _sandbox_product(*, customer_id=SANDBOX_CUSTOMER_ID, code="s-FROZEN-PEAS",
+UOM = "EA"
+
+
+def _sandbox_product(*, customer_id=SANDBOX_CUSTOMER_ID, code="s-FROZEN-PEAS", uom=UOM,
                      length=100, width=50, height=30, weight=12):
+    # Dims hang off the default UoM, written via PATCH /warehouse-products/{id}.
     return {
         "id": "p1",
         "customer": {"id": customer_id},
         "details": {"active": True},
         "references": {"code": code},
-        "length": length, "width": width, "height": height, "weight": weight,
+        "defaultUnitOfMeasure": uom,
+        "unitOfMeasures": {
+            uom: {"baseQty": 1, "length": length, "width": width, "height": height, "weight": weight},
+        },
     }
 
 
@@ -102,14 +115,19 @@ def test_live_mutate_fn_calls_mutate_once_with_diff():
     transport = StatefulProductTransport(_sandbox_product())
     client._http = transport
 
-    fn = live_mutate_fn(client, "p1")
+    fn = live_mutate_fn(client, "p1", UOM)
     resp = fn({"length": 120})
 
     patches = [c for c in transport.calls if c["method"] == "PATCH"]
     assert len(patches) == 1, "exactly one PATCH"
-    assert patches[0]["json"] == {"length": 120}, "carries the diff verbatim"
-    assert patches[0]["url"].endswith("/tenants/TENANT/products/p1")
-    assert resp["length"] == 120
+    assert patches[0]["json"] == [
+        {"op": "add", "path": "/unitOfMeasures/EA/length", "value": 120}
+    ], "carries the diff as a JSON-Patch op on the UoM"
+    assert patches[0]["url"].endswith("/tenants/TENANT/warehouse-products/p1")
+    # L/W/H are UoM fields only under v8 — the PATCH must declare it (and JSON-Patch CT)
+    assert patches[0]["headers"].get("Accept-Version") == "8"
+    assert patches[0]["headers"].get("Content-Type") == "application/json-patch+json"
+    assert resp["unitOfMeasures"]["EA"]["length"] == 120
 
 
 def test_live_mutate_fn_routes_through_the_gated_mutate():
@@ -117,7 +135,7 @@ def test_live_mutate_fn_routes_through_the_gated_mutate():
     # (no raw PATCH leaks past the gate).
     client = _client(write_enabled=False)
     client._http = StatefulProductTransport(_sandbox_product())
-    fn = live_mutate_fn(client, "p1")
+    fn = live_mutate_fn(client, "p1", UOM)
     with pytest.raises(CartonCloudWriteRefused):
         fn({"length": 120})
 
@@ -253,7 +271,11 @@ def test_confirm_receives_full_hard_stop_info():
     assert info.desired_dims["length"] == 140
     assert info.diff == {"length": 140}
     assert info.verb == "PATCH"
-    assert info.endpoint == "/products/p1"
+    assert info.uom == UOM
+    assert info.endpoint == "/warehouse-products/p1"
+    assert info.body == [
+        {"op": "add", "path": "/unitOfMeasures/EA/length", "value": 140}
+    ], "the hard stop shows the exact PATCH body that will fire"
     assert info.write_enabled is True
     assert info.allowlist_is_sandbox_only is True
 
@@ -267,7 +289,9 @@ def test_go_patches_once_and_verifies_read_back_landed():
 
     patches = [c for c in transport.calls if c["method"] == "PATCH"]
     assert len(patches) == 1, "exactly one real PATCH"
-    assert patches[0]["json"] == {"length": 140}
+    assert patches[0]["json"] == [
+        {"op": "add", "path": "/unitOfMeasures/EA/length", "value": 140}
+    ]
     assert report.written is True
     assert report.aborted is False
     assert report.landed is True

@@ -4,8 +4,8 @@ Flips the M-DIMS-2 injection seam from `shadow_mutate_fn` to the real `_mutate`.
 surface rebuild — `approve_dims_write`, the gate chain, and the M-DIMS-2 tests are
 unchanged. M-DIMS-3 adds:
 
-  - `live_mutate_fn` — the live `do_mutate`: PATCH /products/{id} via W1's `_mutate`,
-    exactly once with the diff. The single value that differs from shadow mode.
+  - `live_mutate_fn` — the live `do_mutate`: PATCH /warehouse-products/{id} (v8) via
+    W1's `_mutate`, exactly once with the diff. The single value that differs from shadow.
   - `assert_sandbox_only` — refuse to start unless writes are enabled, a secret is set,
     and the allow-list is EXACTLY the sandbox singleton (so the live Forage id is
     necessarily absent — asserted positively, without this module ever naming it).
@@ -34,6 +34,8 @@ from cc_client.queries import search_warehouse_products
 from .approve import (
     approve_dims_write,
     read_product_for_dims,
+    build_dims_patch,
+    _is_writable_value,
     DIM_FIELDS,
     PRODUCT_PATH,
 )
@@ -61,18 +63,21 @@ class DimsReadBackMismatch(DimsRoundtripError):
 
 # ---------- the live mutate fn (the one injected value that differs from shadow) ----------
 
-def live_mutate_fn(client: CartonCloudClient, product_id: str) -> Callable[[dict[str, Any]], Any]:
-    """The LIVE `do_mutate`: PATCH `/products/{id}` via W1's `_mutate`, once, with the diff.
+def live_mutate_fn(
+    client: CartonCloudClient, product_id: str, uom: str
+) -> Callable[[dict[str, Any]], Any]:
+    """The LIVE `do_mutate`: PATCH `/warehouse-products/{id}` via W1's `_mutate`, once.
 
     Injected in place of `shadow_mutate_fn` — the single value that differs between
-    shadow (M-DIMS-2) and live (M-DIMS-3). `idempotent_mutate` calls it once, and only
-    when the diff is non-empty. Routes through the double-gated `_mutate`, so an
-    un-enabled client still refuses.
+    shadow (M-DIMS-2) and live (M-DIMS-3). Builds the JSON-Patch body with the SAME
+    `build_dims_patch` helper shadow uses, so what shadow previewed is what fires.
+    `idempotent_mutate` calls it once, only when the diff is non-empty. Routes through
+    the double-gated `_mutate`, so an un-enabled client still refuses.
     """
     def _fn(diff: dict[str, Any]) -> Any:
-        path = PRODUCT_PATH.format(id=product_id)
-        log.info("[LIVE] PATCH %s with %s", path, diff)
-        resp = client._mutate("PATCH", path, approved=True, json=diff)
+        path, ops, headers = build_dims_patch(product_id, uom, diff)
+        log.info("[LIVE] PATCH %s with %s", path, ops)
+        resp = client._mutate("PATCH", path, approved=True, json=ops, headers=headers)
         body = resp.json() if hasattr(resp, "json") else resp
         log.info("[LIVE] PATCH %s ok", path)
         return body
@@ -119,10 +124,11 @@ class SandboxCandidate:
 
 @dataclass(frozen=True)
 class TargetSelection:
-    """The chosen SKU: its authoritative current dims, real desired dims, and the diff."""
+    """The chosen SKU: its UoM, authoritative current dims, real desired dims, diff."""
 
     product_id: str
     code: str
+    uom: str
     current_dims: dict[str, Any]
     desired_dims: dict[str, Any]
     diff: dict[str, Any]
@@ -160,7 +166,15 @@ def select_writable_sandbox_sku(
             skipped.append({"code": cand.code, "reason": "no captured desired dims"})
             continue
         read = read_product_for_dims(client, cand.product_id)
-        desired_dims = {f: desired[f] for f in DIM_FIELDS if f in desired}
+        if not read.uom:
+            log.info("skip %s: no default unit-of-measure to write dims onto", cand.code)
+            skipped.append({"code": cand.code, "reason": "no default UoM"})
+            continue
+        # Drop unset/NaN desired values (e.g. ~31% of SKUs lack captured weight) so the
+        # diff — and the PATCH — never carries a non-finite value.
+        desired_dims = {
+            f: desired[f] for f in DIM_FIELDS if f in desired and _is_writable_value(desired[f])
+        }
         diff = compute_diff(read.current_dims, desired_dims)
         if not diff:
             log.info("skip %s: empty diff (current already matches desired) — proves nothing", cand.code)
@@ -170,6 +184,7 @@ def select_writable_sandbox_sku(
             TargetSelection(
                 product_id=cand.product_id,
                 code=cand.code,
+                uom=read.uom,
                 current_dims=read.current_dims,
                 desired_dims=desired_dims,
                 diff=diff,
@@ -215,11 +230,13 @@ class HardStopInfo:
 
     product_id: str
     code: str
+    uom: str
     current_dims: dict[str, Any]
     desired_dims: dict[str, Any]
     diff: dict[str, Any]
     endpoint: str
     verb: str
+    body: list[dict[str, Any]]
     write_enabled: bool
     allowlist_is_sandbox_only: bool
 
@@ -245,11 +262,12 @@ class RoundtripReport:
 def _hard_stop_block(info: HardStopInfo) -> str:
     return (
         "\n================ M-DIMS-3 HARD STOP — confirm before the real PATCH ===========\n"
-        f"  SKU            : {info.product_id}  ({info.code})\n"
-        f"  current dims   : {info.current_dims}   (read from CC)\n"
-        f"  desired dims   : {info.desired_dims}\n"
+        f"  SKU            : {info.product_id}  ({info.code})  UoM={info.uom}\n"
+        f"  current dims   : {info.current_dims}   (read from CC, unset reads as None)\n"
+        f"  desired dims   : {info.desired_dims}   (mm L/W/H, kg weight — units unconfirmed)\n"
         f"  exact diff     : {info.diff}\n"
         f"  about to fire  : {info.verb} {info.endpoint}\n"
+        f"  request body   : {info.body}\n"
         f"  write_enabled  : {info.write_enabled}\n"
         f"  sandbox-only   : {info.allowlist_is_sandbox_only}\n"
         "  No PATCH fires until you confirm 'go'.\n"
@@ -289,15 +307,18 @@ def run_sandbox_roundtrip(
             f"(skipped={skipped}) — nothing to prove"
         )
 
-    endpoint = PRODUCT_PATH.format(id=selection.product_id)
+    # Build the exact PATCH the live fn will fire, so the hard stop shows it verbatim.
+    endpoint, body, _ = build_dims_patch(selection.product_id, selection.uom, selection.diff)
     info = HardStopInfo(
         product_id=selection.product_id,
         code=selection.code,
+        uom=selection.uom,
         current_dims=selection.current_dims,
         desired_dims=selection.desired_dims,
         diff=selection.diff,
         endpoint=endpoint,
         verb="PATCH",
+        body=body,
         write_enabled=client.write_enabled,
         allowlist_is_sandbox_only=config.customer_allowlist == frozenset({SANDBOX_CUSTOMER_ID}),
     )
@@ -320,7 +341,7 @@ def run_sandbox_roundtrip(
         client=client,
         config=config,
         desired_dims=selection.desired_dims,
-        mutate_fn=live_mutate_fn(client, selection.product_id),
+        mutate_fn=live_mutate_fn(client, selection.product_id, selection.uom),
         rate_limiter=rate_limiter or MutateRateLimiter(),
         approval_token=approval_token,
         registry=registry,
