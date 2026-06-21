@@ -359,6 +359,26 @@ def test_sandbox_desired_lookup_only_strips_a_single_leading_s():
     assert lookup("ssX") == {"length": 1}   # one 's' stripped → "sX"
 
 
+def test_sandbox_desired_lookup_resolves_uppercase_S_prefix():
+    # Real sandbox SKU `SAE-TOT` is the mirror of base `AE-TOT` (the `AE-` Forage prefix
+    # exists). Its prefix is an UPPERCASE `S`, unlike the lowercase `sRK-`/`sHL-` mirrors —
+    # so the strip must be case-insensitive, else SAE-TOT is silently skipped (as it was
+    # in the M-DIMS-4 soak).
+    captured = {"AE-TOT": {"length": 600, "width": 400, "height": 300, "weight": 5}}
+    lookup = sandbox_desired_lookup(captured)
+    assert lookup("SAE-TOT") == {"length": 600, "width": 400, "height": 300, "weight": 5}
+
+
+def test_sandbox_desired_lookup_direct_match_precedes_S_strip():
+    # Over-strip guard: real base codes start with an uppercase `S` (e.g. `SNK-1SA`).
+    # A direct hit must win over stripping, so `SNK-1SA` resolves to ITSELF — never to a
+    # spuriously-stripped `NK-1SA`. (Direct-lookup-first is what keeps the case-insensitive
+    # strip safe for the genuine SNK-* codes.)
+    captured = {"SNK-1SA": {"length": 10}, "NK-1SA": {"length": 99}}
+    lookup = sandbox_desired_lookup(captured)
+    assert lookup("SNK-1SA") == {"length": 10}, "direct hit wins; no S-strip on a real base code"
+
+
 # ---------- package export ----------
 
 def test_exported_from_package():
