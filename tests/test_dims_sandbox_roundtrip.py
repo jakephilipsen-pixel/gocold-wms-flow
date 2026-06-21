@@ -352,6 +352,32 @@ def test_run_refuses_to_start_if_not_sandbox_only():
         )
 
 
+# ---------- resolve_base_code: the single-source strip logic (shared with 5b) ----------
+
+def test_resolve_base_code_direct_match_returns_the_code():
+    from dims_write.roundtrip import resolve_base_code
+    captured = {"FP-1234": {"length": 1}}
+    assert resolve_base_code("FP-1234", captured) == "FP-1234"
+
+
+def test_resolve_base_code_strips_lowercase_and_uppercase_s():
+    from dims_write.roundtrip import resolve_base_code
+    captured = {"RK-001": {"length": 1}, "AE-TOT": {"length": 2}}
+    assert resolve_base_code("sRK-001", captured) == "RK-001"
+    assert resolve_base_code("SAE-TOT", captured) == "AE-TOT"  # uppercase-S mirror
+
+
+def test_resolve_base_code_direct_precedence_protects_real_S_codes():
+    from dims_write.roundtrip import resolve_base_code
+    captured = {"SNK-1SA": {"length": 1}, "NK-1SA": {"length": 2}}
+    assert resolve_base_code("SNK-1SA", captured) == "SNK-1SA"  # direct hit wins, no strip
+
+
+def test_resolve_base_code_none_when_unresolvable():
+    from dims_write.roundtrip import resolve_base_code
+    assert resolve_base_code("ZZ-999", {"RK-001": {}}) is None
+
+
 # ---------- sandbox→capture code mapping for desired dims ----------
 
 def test_sandbox_desired_lookup_resolves_s_prefixed_mirror():

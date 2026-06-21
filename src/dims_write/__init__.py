@@ -38,6 +38,20 @@ from .bulk import (
     BulkPlanItem,
     BulkReport,
 )
+from .live_proving import (
+    gather_active_live_candidates,
+    select_live_proving_targets,
+    build_live_proving_plan,
+    run_live_proving,
+    disarm_reminder,
+    finalize_exit,
+    LiveCandidate,
+    LiveTarget,
+    LiveProvingPlan,
+    LiveHardStopInfo,
+    LiveProvingReport,
+    LiveProvingRefused,
+)
 
 __all__ = [
     "approve_dims_write",
@@ -67,4 +81,16 @@ __all__ = [
     "BulkPlan",
     "BulkPlanItem",
     "BulkReport",
+    "gather_active_live_candidates",
+    "select_live_proving_targets",
+    "build_live_proving_plan",
+    "run_live_proving",
+    "disarm_reminder",
+    "finalize_exit",
+    "LiveCandidate",
+    "LiveTarget",
+    "LiveProvingPlan",
+    "LiveHardStopInfo",
+    "LiveProvingReport",
+    "LiveProvingRefused",
 ]
