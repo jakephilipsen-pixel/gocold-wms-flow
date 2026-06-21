@@ -23,7 +23,7 @@ import pytest
 
 from dims_write.roundtrip import (
     live_mutate_fn,
-    assert_sandbox_only,
+    assert_write_target_allowed,
     select_writable_sandbox_sku,
     run_sandbox_roundtrip,
     sandbox_desired_lookup,
@@ -140,33 +140,56 @@ def test_live_mutate_fn_routes_through_the_gated_mutate():
         fn({"length": 120})
 
 
-# ---------- refuse to start unless allow-list is exactly sandbox-only ----------
+# ---------- the named write gate (M-DIMS-5a): base allow-list must be sandbox-only ----------
 
 def test_refuses_to_start_if_live_id_in_allowlist():
+    # Can't promote by editing the allow-list — the base set must be the sandbox singleton.
     cfg = _cfg(allowlist=frozenset({SANDBOX_CUSTOMER_ID, LIVE_FORAGE_CUSTOMER_ID}))
     with pytest.raises(DimsRoundtripRefused):
-        assert_sandbox_only(cfg)
+        assert_write_target_allowed(cfg)
 
 
 def test_refuses_to_start_if_allowlist_is_only_live():
     cfg = _cfg(allowlist=frozenset({LIVE_FORAGE_CUSTOMER_ID}))
     with pytest.raises(DimsRoundtripRefused):
-        assert_sandbox_only(cfg)
+        assert_write_target_allowed(cfg)
 
 
 def test_refuses_to_start_if_write_disabled():
     with pytest.raises(DimsRoundtripRefused):
-        assert_sandbox_only(_cfg(write_enabled=False))
+        assert_write_target_allowed(_cfg(write_enabled=False))
 
 
 def test_refuses_to_start_if_secret_unconfigured():
     with pytest.raises(DimsRoundtripRefused):
-        assert_sandbox_only(_cfg(secret=None))
+        assert_write_target_allowed(_cfg(secret=None))
 
 
 def test_passes_when_sandbox_only_and_enabled_and_secret():
-    # Exactly the sandbox singleton, enabled, secret set → no raise.
-    assert assert_sandbox_only(_cfg()) is None
+    # Exactly the sandbox singleton, enabled, secret set, flag disarmed → no raise.
+    assert assert_write_target_allowed(_cfg()) is None
+
+
+def test_gate_passes_when_live_promotion_armed():
+    # Armed promotion (flag on, base allow-list still sandbox-only) is permitted to start —
+    # the live id becomes writable per-write via W3; the allow-list is untouched.
+    cfg = WriteConfig(write_enabled=True, write_secret=SECRET, live_promotion=True)
+    assert assert_write_target_allowed(cfg) is None
+
+
+def test_gate_logs_loud_warning_when_live_promotion_armed(caplog):
+    import logging as _logging
+    cfg = WriteConfig(write_enabled=True, write_secret=SECRET, live_promotion=True)
+    with caplog.at_level(_logging.WARNING, logger="dims_write.roundtrip"):
+        assert_write_target_allowed(cfg)
+    assert "LIVE PROMOTION ARMED" in caplog.text, "an armed run must announce itself loudly"
+
+
+def test_gate_silent_when_not_armed(caplog):
+    import logging as _logging
+    with caplog.at_level(_logging.WARNING, logger="dims_write.roundtrip"):
+        assert_write_target_allowed(_cfg())
+    assert "LIVE PROMOTION ARMED" not in caplog.text
 
 
 # ---------- target selection: skip empty-diff, pick a real diff ----------
@@ -385,8 +408,8 @@ def test_exported_from_package():
     from dims_write import (
         live_mutate_fn as pkg_live,
         run_sandbox_roundtrip as pkg_run,
-        assert_sandbox_only as pkg_assert,
+        assert_write_target_allowed as pkg_assert,
     )
     assert pkg_live is live_mutate_fn
     assert pkg_run is run_sandbox_roundtrip
-    assert pkg_assert is assert_sandbox_only
+    assert pkg_assert is assert_write_target_allowed

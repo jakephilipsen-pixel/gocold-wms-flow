@@ -6,9 +6,10 @@ unchanged. M-DIMS-3 adds:
 
   - `live_mutate_fn` — the live `do_mutate`: PATCH /warehouse-products/{id} (v8) via
     W1's `_mutate`, exactly once with the diff. The single value that differs from shadow.
-  - `assert_sandbox_only` — refuse to start unless writes are enabled, a secret is set,
-    and the allow-list is EXACTLY the sandbox singleton (so the live Forage id is
-    necessarily absent — asserted positively, without this module ever naming it).
+  - `assert_write_target_allowed` (M-DIMS-5a) — refuse to start unless writes are enabled,
+    a secret is set, and the base allow-list is EXACTLY the sandbox singleton. The live
+    Forage id is writable only when `CC_LIVE_PROMOTION` is armed (gated per-write in W3),
+    never via the allow-list; an armed run is permitted but logs a loud WARNING.
   - target selection — pick an active `s`-prefixed sandbox SKU whose real desired dims
     DIFFER from its current CC dims (an empty diff proves nothing → skip it).
   - `run_sandbox_roundtrip` — the 3-step run: GET current + diff → HARD STOP (human
@@ -136,30 +137,40 @@ def write_and_verify(
     return after.current_dims
 
 
-# ---------- preconditions: refuse to start unless sandbox-only ----------
+# ---------- preconditions: the named write gate (M-DIMS-5a) ----------
 
-def assert_sandbox_only(config: WriteConfig) -> None:
-    """Refuse to start unless writes are enabled, a secret is set, and the allow-list
-    is EXACTLY the sandbox singleton.
+def assert_write_target_allowed(config: WriteConfig) -> None:
+    """Refuse to start a write run unless the config is in a sanctioned shape.
 
-    Requiring the allow-list to equal `{SANDBOX_CUSTOMER_ID}` positively guarantees the
-    live Forage id is absent — without this module ever naming it. Any extra id (e.g.
-    the live id added for promotion) makes the set unequal and refuses.
+    The named live gate (M-DIMS-5a), replacing the former ``assert_sandbox_only``. Refuses
+    unless writes are enabled, a secret is set, and the **base allow-list is EXACTLY the
+    sandbox singleton**. The live Forage id is NEVER admitted via the allow-list — it
+    becomes writable only by arming ``CC_LIVE_PROMOTION`` (gated per-write in W3's
+    ``is_customer_allowed``). So requiring ``customer_allowlist == {SANDBOX_CUSTOMER_ID}``
+    still holds in BOTH modes, and you cannot promote by editing the allow-list.
+
+    When ``live_promotion`` is armed the live id is writable this run; the gate permits it
+    but logs a loud WARNING so an armed run is unmistakable in the record. Default-closed:
+    with the flag clear, this is exactly the old sandbox-only behaviour.
     """
     if not config.write_enabled:
         raise DimsRoundtripRefused(
-            "write_enabled is False — refusing to start the live sandbox round-trip"
+            "write_enabled is False — refusing to start the write run"
         )
     if not config.write_secret:
         raise DimsRoundtripRefused(
-            "CC_WRITE_SECRET not configured — refusing to start the live round-trip"
+            "CC_WRITE_SECRET not configured — refusing to start the write run"
         )
     if config.customer_allowlist != frozenset({SANDBOX_CUSTOMER_ID}):
         raise DimsRoundtripRefused(
-            "allow-list is not sandbox-only — refusing to start the live round-trip. "
+            "base allow-list is not the sandbox singleton — refusing to start the write run. "
             f"Expected exactly the sandbox id; got {sorted(config.customer_allowlist)}. "
-            "A non-sandbox-only allow-list (e.g. one containing the live Forage id) is "
-            "forbidden for this run; promotion to live is its own separately-approved step."
+            "Live promotion is via CC_LIVE_PROMOTION=true, NEVER by editing the allow-list."
+        )
+    if config.live_promotion:
+        log.warning(
+            "LIVE PROMOTION ARMED (CC_LIVE_PROMOTION=true) — the live Forage id is WRITABLE "
+            "this run. This is the deliberate, reversible promotion; clear the flag to re-close."
         )
 
 
@@ -348,7 +359,7 @@ def run_sandbox_roundtrip(
        verify the read-back matches what was written. Leave the dims in place.
     """
     # PRECONDITIONS — refuse before any read or write.
-    assert_sandbox_only(config)
+    assert_write_target_allowed(config)
     if not client.write_enabled:
         raise DimsRoundtripRefused("client.write_enabled is False — refusing to start")
 

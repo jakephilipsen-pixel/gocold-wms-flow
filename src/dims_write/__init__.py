@@ -17,7 +17,7 @@ from .approve import (
 from .roundtrip import (
     live_mutate_fn,
     write_and_verify,
-    assert_sandbox_only,
+    assert_write_target_allowed,
     gather_active_sandbox_candidates,
     select_writable_sandbox_sku,
     run_sandbox_roundtrip,
@@ -49,7 +49,7 @@ __all__ = [
     "PRODUCT_PATH",
     "live_mutate_fn",
     "write_and_verify",
-    "assert_sandbox_only",
+    "assert_write_target_allowed",
     "gather_active_sandbox_candidates",
     "select_writable_sandbox_sku",
     "run_sandbox_roundtrip",

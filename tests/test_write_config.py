@@ -28,7 +28,9 @@ def test_exported_from_package_root():
 # production module) so a test failure is the alarm if it ever leaks into defaults.
 LIVE_FORAGE_CUSTOMER_ID = "d4810e1e-91ab-43ed-b68e-b72bd858b122"
 
-CC_WRITE_VARS = ("CC_WRITE_ENABLED", "CC_WRITE_SECRET", "CC_WRITE_CUSTOMER_ALLOWLIST")
+CC_WRITE_VARS = (
+    "CC_WRITE_ENABLED", "CC_WRITE_SECRET", "CC_WRITE_CUSTOMER_ALLOWLIST", "CC_LIVE_PROMOTION",
+)
 
 
 @pytest.fixture
@@ -114,19 +116,79 @@ def test_from_env_parses_csv_allowlist_trimming_whitespace(clean_env):
     )
 
 
-def test_from_env_allowlist_can_be_promoted_to_include_live(clean_env):
-    # The live-promotion path (M-DIMS-5): adding the live id via env is the ONLY
-    # way it enters the allow-list. Default never contains it (asserted above).
-    clean_env.setenv(
-        "CC_WRITE_CUSTOMER_ALLOWLIST",
-        f"{SANDBOX_CUSTOMER_ID},{LIVE_FORAGE_CUSTOMER_ID}",
-    )
-    assert LIVE_FORAGE_CUSTOMER_ID in WriteConfig.from_env().customer_allowlist
-
-
 # ---------- convenience membership predicate ----------
 
 def test_is_customer_allowed_default():
     cfg = WriteConfig()
     assert cfg.is_customer_allowed(SANDBOX_CUSTOMER_ID) is True
     assert cfg.is_customer_allowed(LIVE_FORAGE_CUSTOMER_ID) is False
+
+
+# ---------- M-DIMS-5a: live-promotion gate (the single flag that arms the live id) ----------
+
+def test_default_live_promotion_is_closed():
+    assert WriteConfig().live_promotion is False
+
+
+def test_live_id_writable_only_when_promotion_armed():
+    # The named live gate: the live Forage id is writable IFF CC_LIVE_PROMOTION is armed.
+    enabled = dict(write_enabled=True, write_secret="valid")
+    assert WriteConfig(**enabled, live_promotion=False).is_customer_allowed(LIVE_FORAGE_CUSTOMER_ID) is False
+    assert WriteConfig(**enabled, live_promotion=True).is_customer_allowed(LIVE_FORAGE_CUSTOMER_ID) is True
+
+
+def test_live_id_in_allowlist_does_NOT_grant_write_without_the_flag():
+    # Anti-bypass: the live id is gated SOLELY by the flag, never by allow-list membership.
+    # Even smuggled into the allow-list, it stays refused unless CC_LIVE_PROMOTION is armed.
+    cfg = WriteConfig(
+        write_enabled=True, write_secret="valid",
+        customer_allowlist=frozenset({SANDBOX_CUSTOMER_ID, LIVE_FORAGE_CUSTOMER_ID}),
+        live_promotion=False,
+    )
+    assert cfg.is_customer_allowed(LIVE_FORAGE_CUSTOMER_ID) is False, (
+        "allow-list membership must NOT make the live id writable — only the flag does"
+    )
+
+
+def test_sandbox_allowed_regardless_of_promotion_flag():
+    # The sandbox path is unchanged by promotion: sandbox writes work flag-off and flag-on.
+    assert WriteConfig().is_customer_allowed(SANDBOX_CUSTOMER_ID) is True
+    assert WriteConfig(live_promotion=True).is_customer_allowed(SANDBOX_CUSTOMER_ID) is True
+
+
+def test_promotion_is_reversible_a_clear_flag_recloses_the_gate():
+    armed = WriteConfig(write_enabled=True, write_secret="valid", live_promotion=True)
+    recleared = WriteConfig(write_enabled=True, write_secret="valid", live_promotion=False)
+    assert armed.is_customer_allowed(LIVE_FORAGE_CUSTOMER_ID) is True
+    assert recleared.is_customer_allowed(LIVE_FORAGE_CUSTOMER_ID) is False
+
+
+# ---------- from_env: CC_LIVE_PROMOTION parsing (only literal true arms it) ----------
+
+def test_from_env_default_live_promotion_closed(clean_env):
+    clean_env.delenv("CC_LIVE_PROMOTION", raising=False)
+    assert WriteConfig.from_env().live_promotion is False
+
+
+@pytest.mark.parametrize("value", ["true", "TRUE", "True", " true "])
+def test_from_env_arms_live_promotion_on_true(clean_env, value):
+    clean_env.setenv("CC_LIVE_PROMOTION", value)
+    assert WriteConfig.from_env().live_promotion is True
+
+
+@pytest.mark.parametrize("value", ["false", "0", "1", "yes", "", "no", "on"])
+def test_from_env_keeps_live_promotion_closed_unless_true(clean_env, value):
+    clean_env.setenv("CC_LIVE_PROMOTION", value)
+    assert WriteConfig.from_env().live_promotion is False
+
+
+def test_from_env_arming_flag_makes_live_writable_with_default_allowlist(clean_env):
+    # One line of intent: CC_LIVE_PROMOTION=true alone (default sandbox allow-list) makes
+    # the live id writable — without ever naming it in CC_WRITE_CUSTOMER_ALLOWLIST.
+    clean_env.setenv("CC_WRITE_ENABLED", "true")
+    clean_env.setenv("CC_WRITE_SECRET", "valid")
+    clean_env.setenv("CC_LIVE_PROMOTION", "true")
+    cfg = WriteConfig.from_env()
+    assert cfg.customer_allowlist == frozenset({SANDBOX_CUSTOMER_ID})  # allow-list untouched
+    assert cfg.is_customer_allowed(LIVE_FORAGE_CUSTOMER_ID) is True
+    assert cfg.is_customer_allowed(SANDBOX_CUSTOMER_ID) is True

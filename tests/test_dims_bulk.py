@@ -10,7 +10,7 @@ Safety posture under test (Jake's decisions):
   - IDEMPOTENT re-run: a second run no-ops every already-correct SKU (zero PATCHes) —
     this is what makes fail-fast safe (re-run after a fix resumes cleanly).
   - rate-limited through W5, paced so a sustained batch never trips the limiter.
-  - `assert_sandbox_only` still refuses a non-sandbox allow-list.
+  - `assert_write_target_allowed` still refuses a non-sandbox base allow-list.
 
 CC is mocked; the real soak is a deliberate human run (`scripts/run_dims_bulk_sandbox.py`).
 """
