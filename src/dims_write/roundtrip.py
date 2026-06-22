@@ -278,13 +278,29 @@ def sandbox_desired_lookup(
     desired dims belong to that SKU.
     """
     def _lookup(code: str) -> dict[str, Any] | None:
-        if code in captured:
-            return captured[code]
-        if code[:1] in ("s", "S") and code[1:] in captured:
-            return captured[code[1:]]
-        return None
+        base = resolve_base_code(code, captured)
+        return captured[base] if base is not None else None
 
     return _lookup
+
+
+def resolve_base_code(
+    code: str, captured: Mapping[str, dict[str, Any]]
+) -> str | None:
+    """Resolve a CC SKU code to its captured-table base code, or ``None``.
+
+    The single source of the sandbox-mirror strip logic (shared by ``sandbox_desired_lookup``
+    and M-DIMS-5b's live mapping display). Try the code **directly** first — so a genuine
+    base code that starts with ``S`` (``SNK-*``) hits itself and is never stripped — then
+    strip a **single** leading ``s``/``S`` (case-insensitive: ``SAE-TOT`` → ``AE-TOT``).
+    Returning the resolved *key* (not just the dims) lets a caller show which base code a
+    live SKU mapped to — the mapping decision M-DIMS-5b puts in front of a human.
+    """
+    if code in captured:
+        return code
+    if code[:1] in ("s", "S") and code[1:] in captured:
+        return code[1:]
+    return None
 
 
 # ---------- the run: hard stop, PATCH, read-back verify ----------
