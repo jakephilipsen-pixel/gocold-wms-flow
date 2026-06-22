@@ -108,6 +108,11 @@ def write_and_verify(
     re-reads and compares. Returns the read-back current dims on success; raises
     ``DimsReadBackMismatch`` if any written field didn't land. ``desired_dims`` must be
     pre-filtered (no NaN/None) so the read-back only checks what was actually sent.
+
+    Both the diff baseline (``approve_dims_write``'s read) and the read-back read the SAME
+    ``uom`` the PATCH targets — so for M-DIMS-5c the verify confirms the dims landed on the
+    CARTON (CT) UoM specifically, not merely that *some* dim changed. For the each/sandbox path
+    ``uom`` is the default UoM, so this is unchanged from M-DIMS-3/4/5b.
     """
     approve_dims_write(
         product_id,
@@ -118,8 +123,9 @@ def write_and_verify(
         rate_limiter=rate_limiter,
         approval_token=approval_token,
         registry=registry,
+        read_uom=uom,
     )
-    after = read_product_for_dims(client, product_id)
+    after = read_product_for_dims(client, product_id, uom=uom)
     mismatched = {
         f: (desired_dims[f], after.current_dims.get(f))
         for f in desired_dims

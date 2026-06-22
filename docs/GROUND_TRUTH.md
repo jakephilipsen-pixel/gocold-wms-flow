@@ -135,7 +135,11 @@ dims-write chain, the sandbox-only refusal, and that shadow never calls `_mutate
 re-run (zero PATCHes), the paced limiter (not bypassed), and the sandbox-only refusal;
 `test_write_config.py` + `test_write_customer_guard.py` assert the M-DIMS-5a live gate —
 the live id writable IFF `CC_LIVE_PROMOTION` armed, the anti-bypass (allow-list membership
-never grants it), and the per-write W3 re-check.
+never grants it), and the per-write W3 re-check. `test_dims_ct_bulk.py` (M-DIMS-5c, 24)
+asserts CT-UoM target selection — the resolver returns the `CT` id (else skip **"no CT UoM"**
+with no fall-through to the each, never matching `CTN`), the PATCH **and** read-back hit the
+`CT` UoM specifically (not the each), the ~367 EA-only + 7 `CTN`/`PLT` SKUs are not written, and
+the live run refuses unless `CC_LIVE_PROMOTION` is armed.
 
 **Summary:** the Python repo has exactly **one** business-data write path — the dims `PATCH`
 to a warehouse-product UoM (§2.5); M-DIMS-4 loops it and M-DIMS-5a adds the live gate, but
@@ -146,6 +150,21 @@ base allow-list sandbox-only, and `CC_LIVE_PROMOTION` **disarmed** — so the li
 is unwritable until that flag is deliberately armed. Other non-GET traffic is search reads
 (2.2) and SOH report-run creation (2.3). Dispatch write-back (2.4)
 is refused and unbuilt.
+
+### 2.7 Dims → UoM targeting: the three groups (M-DIMS-5c)
+
+Dims live **per unit-of-measure**, and the captured dims are **carton** dims, so they must
+target the right UoM (M-DIMS-5b's `AE-2CB` finding: writing carton dims to the *default* UoM
+mis-dimensions the each). The active live Forage SKUs split three ways — **~367 EA-only** (each
+dims → the default `EA` UoM; the each path's job), **81 CT-carton** (`EA` + a `CT` UoM: carton
+dims → `CT` via **M-DIMS-5c**; their each-level / Base-UoM dims stay **EMPTY pending 5d**), and
+**7 `CTN`/`PLT` no-EA** (a genuinely different shape — **deferred/undecided**, NOT handled by 5c).
+M-DIMS-5c (`src/dims_write/bulk.py` `run_ct_bulk`, resolver `resolve_ct_uom`) reuses the M-DIMS-4
+loop unchanged and writes **only** the `CT` UoM — a SKU with no `CT` UoM is skipped "no CT UoM"
+(no fall-through to the each, no `CTN` guess), and the read-back verifies the dims landed on the
+`CT` UoM specifically. **Built CC-mocked at this HEAD; NOT yet run live** (`CC_LIVE_PROMOTION`
+disarmed). This subsection (and M-DIMS-5b) post-date the 5a-era Summary/Footer above; the live
+dims-UoM record is **[DIMS_UOM_STATE.md](DIMS_UOM_STATE.md)**.
 
 ---
 
