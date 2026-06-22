@@ -107,21 +107,36 @@ class ProductDimsRead:
     raw: dict[str, Any]
 
 
-def read_product_for_dims(client: CartonCloudClient, product_id: str) -> ProductDimsRead:
-    """GET the warehouse-product and pull its customer id, default UoM, current dims.
+def dims_for_uom(raw: Mapping[str, Any], uom: str | None) -> dict[str, Any]:
+    """Pull L/W/H/weight off ``unitOfMeasures.{uom}``; unset (or an absent UoM) reads as None.
 
-    A plain read through ``client.get`` — it never flips ``write_enabled``. Dims hang
-    off ``unitOfMeasures.{defaultUnitOfMeasure}`` and are OMITTED by GET when unset, so
-    a freshly-captured SKU reads ``{length: None, ...}`` — exactly the empty state a
-    first write fills. ``customer.id`` drives the customer-guard. Confirmed against the
-    real sandbox at M-DIMS-3's read-back step.
+    The single place that extracts a *named* UoM's dims, so the diff baseline and the read-back
+    can both read the SAME UoM the PATCH targets (M-DIMS-5c). A GET omits unset dims, so a
+    freshly-captured UoM reads ``{length: None, ...}`` — exactly the empty state a first write
+    fills — and an absent UoM reads all-None (so a read-back against the wrong UoM can never
+    false-pass).
+    """
+    uom_obj = (raw.get("unitOfMeasures") or {}).get(uom) or {}
+    return {field: uom_obj.get(field) for field in DIM_FIELDS}
+
+
+def read_product_for_dims(
+    client: CartonCloudClient, product_id: str, *, uom: str | None = None
+) -> ProductDimsRead:
+    """GET the warehouse-product and pull its customer id, target UoM, and that UoM's dims.
+
+    A plain read through ``client.get`` — it never flips ``write_enabled``. ``uom`` selects
+    WHICH UoM's dims to read: ``None`` (default) reads the product's ``defaultUnitOfMeasure`` —
+    the unchanged M-DIMS-3/4/5b behaviour (the each). M-DIMS-5c passes the resolved CT UoM id so
+    the diff baseline and the read-back follow the CARTON UoM, never the each. ``customer.id``
+    (top-level) always drives the customer-guard, independent of which UoM is read. Confirmed
+    against the real sandbox at M-DIMS-3's read-back step.
     """
     raw = client.get(PRODUCT_PATH.format(id=product_id), headers={"Accept-Version": WP_ACCEPT_VERSION})
     customer_id = (raw.get("customer") or {}).get("id")
-    uom = raw.get("defaultUnitOfMeasure")
-    uom_obj = (raw.get("unitOfMeasures") or {}).get(uom) or {}
-    current_dims = {field: uom_obj.get(field) for field in DIM_FIELDS}
-    return ProductDimsRead(customer_id=customer_id, uom=uom, current_dims=current_dims, raw=raw)
+    target = uom if uom is not None else raw.get("defaultUnitOfMeasure")
+    current_dims = dims_for_uom(raw, target)
+    return ProductDimsRead(customer_id=customer_id, uom=target, current_dims=current_dims, raw=raw)
 
 
 def shadow_mutate_fn(product_id: str, uom: str, *, sink: Callable[[str], None] | None = None):
@@ -167,6 +182,7 @@ def approve_dims_write(
     approval_token: str | None,
     registry: ObjectLockRegistry | None = None,
     endpoint: str | None = None,
+    read_uom: str | None = None,
 ) -> DimsApproveResult:
     """Run the full spine chain for a dims write, then apply ``mutate_fn``.
 
@@ -175,14 +191,20 @@ def approve_dims_write(
     rate-limit → read → customer-guard → authz → idempotent_mutate — so every gate
     engages regardless of what ``mutate_fn`` does (a refused gate raises before the
     mutate fn is ever reached).
+
+    ``read_uom`` selects the UoM the diff baseline is read from: ``None`` (default) reads the
+    product's default UoM — the unchanged each/sandbox behaviour — while M-DIMS-5c passes the
+    resolved CT UoM id so the no-op/diff decision is made against the CARTON UoM's current dims,
+    not the each's (else a SKU whose CT already matches but whose empty each differs would
+    re-PATCH forever).
     """
     ep = endpoint or PRODUCT_PATH
 
     # 1. rate-limit (W5) — reject before doing anything, including the read.
     rate_limiter.check(ep)
 
-    # 2. the one real, read-only GET — resolves customer id + current dims.
-    read = read_product_for_dims(client, product_id)
+    # 2. the one real, read-only GET — resolves customer id + current dims (of read_uom, or default).
+    read = read_product_for_dims(client, product_id, uom=read_uom)
 
     # 3. customer-guard (W3) — refuse a non-allow-listed target, EVEN in shadow.
     verify_customer_allowed(read.customer_id, config)
