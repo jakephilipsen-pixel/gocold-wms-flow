@@ -345,6 +345,89 @@ def run_ct_bulk(
     )
 
 
+def run_each_bulk(
+    *,
+    client: CartonCloudClient,
+    config: WriteConfig,
+    desired_lookup: Callable[[str], dict[str, Any] | None],
+    approval_token: str | None,
+    confirm: Callable[[BulkPlan], bool],
+    candidates: list | None = None,
+    rate_limiter: MutateRateLimiter | None = None,
+    registry: ObjectLockRegistry | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+    pace_seconds: float | None = None,
+) -> BulkReport:
+    """M-DIMS-5d — bulk-write captured dims to the Each/Base UoM of every active LIVE Forage SKU.
+
+    The automated dims pipeline after M-DIMS-5c (the CT carton-UoM write) was CLOSED: CC's
+    name-validation trap (every live CT UoM is named "CT", 2 chars < the 3-char floor) 422s a CT
+    dims PATCH, and CT names can't be edited on live master. So the target is the **Each / Base
+    UoM** (``defaultUnitOfMeasure``) — every SKU has one, and the probe found all 455 names valid,
+    so the each accepts dims cleanly.
+
+    This is the SAME engine as 5c (``_run_bulk``): the 5a gate, ONE batch hard stop, paced
+    fail-fast, ``write_and_verify`` + read-back of the targeted UoM, W4 idempotency, and the
+    ``CC_LIVE_PROMOTION`` precondition (the live id is writable only when armed; W3 re-checks per
+    write). The ONLY difference from 5c is the resolver: ``resolve_default_uom`` (the each), not
+    ``resolve_ct_uom``. A product with no default UoM (none live, per the probe) is skipped, never
+    written. Dims arrive in cm via ``captured_cc_dims_table`` (the script's concern).
+
+    The 15 SKUs that already carry Base-UoM dims are NOT special-cased: where a stored value (e.g.
+    a pre-cm 10× ``255``) differs from the captured cm desired (``25.5``), the W4 diff is non-empty
+    and the SKU PATCHes to the correct cm value — the bulk run corrects them for free; where it
+    already matches, it no-ops.
+    """
+    return _run_bulk(
+        client=client, config=config,
+        gather=lambda: gather_active_live_candidates(client),
+        candidates=candidates, desired_lookup=desired_lookup,
+        uom_resolver=resolve_default_uom, no_uom_reason="no default UoM",
+        require_live_promotion=True,
+        approval_token=approval_token, confirm=confirm,
+        rate_limiter=rate_limiter, registry=registry, sleep=sleep, pace_seconds=pace_seconds,
+        label="M-DIMS-5d",
+    )
+
+
+def format_each_bulk_report(report: BulkReport) -> str:
+    """Render the M-DIMS-5d result — the Each/Base UoM dims write — with its scope named honestly.
+
+    The cohort is every live Forage SKU with a default UoM (= written + no-op + failed +
+    untouched-after-failure); the probe found that to be all of them, so unlike 5c there is no
+    large "no UoM" skip group. States, as a tested fact, that this writes the EACH and that the CT
+    carton UoM is OUT of scope (CLOSED — CC name-validation + the no-edit-on-master policy), so a
+    reader can never mistake a green each-write for the CT write that was dropped.
+    """
+    n_written = len(report.written)
+    n_failed = 1 if report.failed else 0
+    cohort = n_written + len(report.no_ops) + n_failed + len(report.untouched_after_failure)
+    n_no_each = sum(1 for s in report.skipped if s.get("reason") == "no default UoM")
+
+    lines = [
+        "=== M-DIMS-5d — Each/Base UoM dims bulk result ===",
+        f"  Each cohort (live Forage SKUs WITH a default UoM) : {cohort}",
+        f"  dims written + verified on the each this run      : {n_written} of {cohort}",
+        f"  already-correct (no-op)                           : {len(report.no_ops)}",
+        f"  skipped — no default UoM (none expected live)     : {n_no_each}",
+    ]
+    if report.aborted:
+        lines.append("  ABORTED at the batch hard stop — nothing written.")
+    if report.failed:
+        lines.append(f"  FAILED (fail-fast) at {report.failed['code']}: {report.failed.get('error', '')}")
+        lines.append(f"     untouched after the failure: {report.untouched_after_failure}")
+    lines += [
+        "",
+        "  SCOPE — read this honestly:",
+        "    - dims are written to the EACH / Base UoM (defaultUnitOfMeasure), in cm.",
+        "    - the CT carton UoM is OUT of scope (CLOSED): CC rejects CT dims because the CT UoM "
+        "name fails validation, and CT names are not edited on live master.",
+        "    - SKUs that already carried each dims are corrected in place by the idempotent diff "
+        "(e.g. a stale 10× value → the captured cm value), not special-cased.",
+    ]
+    return "\n".join(lines)
+
+
 def format_ct_bulk_report(report: BulkReport) -> str:
     """Render the M-DIMS-5c result so the deliberately-PARTIAL state cannot read as "done".
 

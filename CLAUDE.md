@@ -196,9 +196,19 @@ until the slotting logic has been validated against reality for a quarter.
   each-write, probe the Base UoM the same way, read-only:
   `scripts/probe_each_uom_names.py` → `dims_write.each_probe` buckets each SKU
   each-writable / each-blocked (same name trap) / no-each. Shared name-validation
-  lives in `dims_write.uom_name` (CC's 3–64 char rule). Do NOT build the
-  each-write until the probe shows the Base UoM cohort is clean (or names which
-  are name-blocked).
+  lives in `dims_write.uom_name` (CC's 3–64 char rule). Probe verdict: Base UoM
+  cohort is CLEAN (455/455 valid), so the each-write is unblocked.
+- **M-DIMS-5d (Each/Base UoM dims write) BUILT, CC-mocked, NOT run live.**
+  `dims_write.run_each_bulk` + `scripts/run_dims_each_bulk.py` — the same proven
+  engine as 5c with `resolve_default_uom` (the each) swapped in for the CT
+  resolver; dims written in cm via `captured_cc_dims_table`. Live-gated
+  (`CC_LIVE_PROMOTION`, default-closed), ONE batch hard stop, fail-fast,
+  `finalize_exit` still-armed safeguard. `--only CODES` restricts the run for
+  Jake's first deliberate few-SKU cm test (eyeball in CC, confirm cm) before the
+  bulk. The 15 SKUs already carrying each dims (4 in mm from 5b, 11 in metres) are
+  corrected in place by the idempotent diff — see `DIMS_UOM_STATE.md`. CT carton
+  UoM is CLOSED (out of automated scope). NEXT: Jake reviews the PR, then runs the
+  few-SKU armed test himself. GUI deferred.
 - Now that dims exist locally, next build:
     - Slotting recommendations: which SKU at which bay height
       (1500/1100/750mm) given (cube × velocity × replen frequency)
