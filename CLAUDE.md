@@ -168,13 +168,19 @@ until the slotting logic has been validated against reality for a quarter.
   LANDED** (M-DIMS-3, 21 Jun 2026). One sandbox SKU (`sHL-BWC`) got full
   L/W/H + weight written to CC and read-back verified, via `src/dims_write/`
   (the W0–W5 gate chain → human hard stop → PATCH warehouse-products UoM under
-  v8 → read-back). **UNITS CORRECTION (23 Jun 2026): CC's UoM L/W/H are
-  CENTIMETRES, not mm** (Jake, confirmed against the CC UI — supersedes the
-  earlier "mm" read-back). The capture template is in mm, so the dims-write
-  scripts now convert mm→cm (÷10) at the write boundary via
-  `dims_write.captured_cc_dims_table` (weight stays kg). ⚠ Dims already written
-  live before this fix (`sHL-BWC` sandbox + the 4 EA Forage SKUs from M-DIMS-5b)
-  are 10× too large and need correcting in a separate, deliberately-armed run.
+  v8 → read-back). **UNITS CORRECTION (24 Jun 2026): CC's UoM L/W/H are
+  METRES** (Jake, confirmed against CC — supersedes BOTH the earlier "mm" and the
+  23 Jun "cm" reads; the "cm confirmed live" eyeball read `23×14×20.5` as cm but
+  in a metres field those are absurd, and the each-census already found 11 SKUs
+  correctly stored in metres). The capture template is in mm, so the write
+  boundary must convert **mm→m (÷1000)**, weight stays kg. ⚠ The Python engine
+  (`dims_write.captured_cc_dims_table`, `MM_PER_CM=10`) STILL writes cm and is
+  WRONG — must become ÷1000 before any re-run. ⚠ Dims already written live
+  (`sHL-BWC` sandbox + the 4 EA 5b SKUs in mm, and the **132 5d SKUs in cm**) are
+  the wrong magnitude (cm writes ~100× too big in a metres field) and need
+  correcting in a separate, deliberately-armed run. The **app's** write boundary
+  (`dim-capture-app/backend/src/services/ccClient.ts`) is already corrected to
+  mm→m (÷1000), 24 Jun 2026. See `DIMS_UOM_STATE.md`.
   The earlier
   `dim-capture-app/` legacy-API approach (Bearer key, `/products` PATCH on
   `app.cartoncloud.com.au/api/v1`) is **superseded** — the live OAuth2 API
@@ -201,12 +207,13 @@ until the slotting logic has been validated against reality for a quarter.
 - **M-DIMS-5d (Each/Base UoM dims write) BUILT, CC-mocked, NOT run live.**
   `dims_write.run_each_bulk` + `scripts/run_dims_each_bulk.py` — the same proven
   engine as 5c with `resolve_default_uom` (the each) swapped in for the CT
-  resolver; dims written in cm via `captured_cc_dims_table`. Live-gated
+  resolver; dims written via `captured_cc_dims_table`. Live-gated
   (`CC_LIVE_PROMOTION`, default-closed), ONE batch hard stop, fail-fast,
   `finalize_exit` still-armed safeguard. `--only CODES` restricts the run for
-  Jake's first deliberate few-SKU cm test (eyeball in CC, confirm cm) before the
-  bulk. **cm CONFIRMED LIVE; the bulk wrote 132 SKUs then hit the name-poison
-  finding** (below). CT carton UoM is CLOSED (out of automated scope).
+  Jake's first deliberate few-SKU test before the bulk. The bulk wrote 132 SKUs
+  then hit the name-poison finding (below). ⚠ **Those 132 are in cm and ~100× too
+  big** — CC wants metres (units correction above); the engine + the 132 live
+  writes both need re-correcting (÷1000). CT carton UoM is CLOSED (out of scope).
   - **Name-poison guard (`block_on_poisoning_uom`, default-on in `run_each_bulk`).**
     The live bulk fail-fast halted on HL-6VA with a 422 on `/unitOfMeasures/CT/name`
     *while writing EA* — CC validates the WHOLE product UoM set on any dims PATCH, so

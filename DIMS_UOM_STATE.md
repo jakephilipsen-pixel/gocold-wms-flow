@@ -2,7 +2,31 @@
 
 State of the dims→CartonCloud sync, by unit-of-measure. Source of truth for "where do dims go".
 
-_Last updated: 23 Jun 2026 (M-DIMS-5d each-write: cm confirmed live, 132 written, name-poison guard added)._
+_Last updated: 24 Jun 2026 (UNITS CORRECTION: CC stores **metres**, not cm — see banner)._
+
+## ⚠⚠ UNITS CORRECTION — CC stores METRES, not centimetres (Jake, 24 Jun 2026)
+
+The earlier "cm confirmed live" was **wrong**. CC's UoM `length`/`width`/`height` are **metres**.
+Conversion at the write boundary must be **mm→m (÷1000)**, NOT mm→cm (÷10). A 300 mm carton edge
+is `0.3`, not `30`.
+
+**Corroboration:** (1) Jake confirmed metres against CC, 24 Jun. (2) The "cm confirmed" eyeball
+read the numbers `23×14×20.5` as cm — but in a metres field those are 23 m × 14 m × 20.5 m
+(absurd). (3) The census below already found 11 SKUs stored as `0.21`-style values and mislabeled
+them "wrong (metres)"; under the metres truth **those 11 were the only correct entries**, and the
+cm engine would have inflated them 100×.
+
+**Impact — NOT yet fixed (deliberate, gated live operation; Jake owns the re-correction):**
+- The Python engine (`dims_write.captured_cc_dims_table`, `mm_to_cm`, `MM_PER_CM=10`) **still writes
+  cm** and is WRONG. It MUST be changed to ÷1000 before any re-run.
+- The **132 SKUs written live in 5d are ~100× too big** (cm values in a metres field), as are the
+  sandbox `sHL-BWC` and the 4 EA 5b writes. All need re-correcting once the engine is fixed and
+  deliberately re-armed.
+- The **app** (`dim-capture-app`) write boundary has already been corrected to mm→m (÷1000),
+  24 Jun 2026 — `backend/src/services/ccClient.ts`.
+
+_Everything below this banner that says "cm" predates the correction — read it as "metres" for the
+target unit; the wrong-unit analysis in the tracking table is now inverted (see notes there)._
 
 ## TL;DR
 
@@ -51,24 +75,25 @@ dims because of an unfixable name, that's a rulebook gap worth one more push bef
 
 ## Units
 
-CC's UoM `length`/`width`/`height` are **centimetres**; weight is **kg**. The capture template is
-in **mm**, converted mm→cm (÷10) at the write boundary by `dims_write.captured_cc_dims_table`.
-(See CLAUDE.md gotcha #6.)
+CC's UoM `length`/`width`/`height` are **metres** (corrected 24 Jun 2026 — see top banner);
+weight is **kg**. The capture template is in **mm**, so the write boundary must convert
+**mm→m (÷1000)**. ⚠ `dims_write.captured_cc_dims_table` still does ÷10 (cm) and is WRONG until
+fixed. The app's `ccClient.ts` already converts mm→m. (See CLAUDE.md gotcha #6.)
 
 ## Tracking — the 15 live SKUs that already carry each (Base UoM) dims (read-only census, 23 Jun 2026)
 
-Recorded so the each-write's effect on them is explicit, not silent. **All 15 are in the captured
-dims table, so the each-write's idempotent diff CORRECTS each of them in place** to the captured
-cm value — no special-casing. Their current stored values are in the WRONG unit (two regimes):
+Recorded so the each-write's effect on them is explicit, not silent. ⚠ **This table's wrong-unit
+analysis is INVERTED by the metres correction** (see top banner): the target value is metres, so
+the 11 "metres" SKUs were actually CORRECT and the 4 "mm" rows plus any cm value are the wrong ones.
 
-| Regime | Count | SKUs | Example (stored → captured cm) |
+| Regime (under the corrected metres truth) | Count | SKUs | Example |
 |---|---|---|---|
-| **mm (10× too big)** — the M-DIMS-5b EA writes | 4 | BB-2CH, BE-1CH, BF-GRC, BI-BOM | BB-2CH `230` → `23.0` |
-| **metres (~100× too small, some garbage)** — prior CC-UI/other entry | 11 | BI-CEH, BI-CHO, BI-CMI, BI-COI, BI-CPE, BI-CSU, BI-HON, BI-PES, BI-SRI, BI-SUG, BI-VSU | BI-CEH `0.21` → `20.5` (and stray values like BI-COI W=`0.8`) |
+| **mm (1000× too big)** — the M-DIMS-5b EA writes | 4 | BB-2CH, BE-1CH, BF-GRC, BI-BOM | BB-2CH stored `230`, should be `0.23` m |
+| **metres — ALREADY CORRECT** (prior CC-UI entry; cm engine wrongly flagged these) | 11 | BI-CEH, BI-CHO, BI-CMI, BI-COI, BI-CPE, BI-CSU, BI-HON, BI-PES, BI-SRI, BI-SUG, BI-VSU | BI-CEH `0.21` m ≈ 205 mm ✓ (a few have stray values to check by hand) |
 
-When the each-write runs: each of these 15 PATCHes from its wrong-unit value to the captured cm
-value (diff is non-empty), so the bulk run cleans them up for free. SKUs whose each already matches
-the captured cm value will no-op. Census artifact: `data/dims/each_uom_census.csv`.
+The correct desired value for, e.g., BB-2CH (205 mm captured) is `0.205` m. Once the engine is
+fixed to ÷1000 and re-armed, the each-write will set every SKU to its captured **metres** value;
+the 11 already-metres SKUs will largely no-op. Census artifact: `data/dims/each_uom_census.csv`.
 
 ## Engine (shared by 5c-CT, 5d-each, sandbox soak)
 
