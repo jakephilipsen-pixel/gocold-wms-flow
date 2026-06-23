@@ -48,6 +48,7 @@ from dims_write import (  # noqa: E402
     build_bulk_plan,
     run_each_bulk,
     resolve_default_uom,
+    POISON_SKIP_REASON,
     format_each_bulk_report,
     sandbox_desired_lookup,
     captured_cc_dims_table,
@@ -110,11 +111,17 @@ def _render_plan(plan: BulkPlan, *, scoped: bool) -> str:
     for item in plan.to_write:
         lines.append(f"     {item.code:<14} each-uom={item.uom:<12} dims={item.desired_dims}  diff={item.diff}")
     n_no_each = sum(1 for s in plan.skipped if s.get("reason") == "no default UoM")
-    other = [(s["code"], s["reason"]) for s in plan.skipped if s.get("reason") != "no default UoM"]
+    blocked = [s for s in plan.skipped if str(s.get("reason", "")).startswith(POISON_SKIP_REASON)]
+    other = [s for s in plan.skipped
+             if s.get("reason") != "no default UoM" and not str(s.get("reason", "")).startswith(POISON_SKIP_REASON)]
     lines += [
         f"  already-correct (no-op) : {len(plan.no_ops)}",
+        f"  name-poisoned (skipped — invalid UoM name blocks save) : {len(blocked)}  (fix the UoM name in CC to unblock)",
         f"  skipped — no default UoM : {n_no_each}  (none expected live — the probe found 0)",
     ]
+    if blocked:
+        for s in sorted(blocked, key=lambda x: x["code"])[:20]:
+            lines.append(f"      {s['code']:<16} {s['reason']}")
     if other:
         lines.append(f"  skipped — other (no captured dims) : {len(other)}")
     lines += [
@@ -174,6 +181,7 @@ def main() -> int:
             plan = build_bulk_plan(
                 client, candidates, desired_lookup,
                 config=config, uom_resolver=resolve_default_uom, no_uom_reason="no default UoM",
+                block_on_poisoning_uom=True,
             )
             print(_render_plan(plan, scoped=scoped))
             print("\nPREVIEW ONLY — CC_LIVE_PROMOTION is not armed, so nothing was written.")

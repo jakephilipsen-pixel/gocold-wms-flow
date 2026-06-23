@@ -43,6 +43,7 @@ from .roundtrip import (
     DimsReadBackMismatch,
 )
 from .live_proving import gather_active_live_candidates
+from .uom_name import uom_name_status
 
 log = logging.getLogger(__name__)
 
@@ -83,6 +84,35 @@ def resolve_ct_uom(raw: Mapping[str, Any]) -> str | None:
         if str(code).strip().upper() == CARTON_UOM_CODE:
             return uom_id
     return None
+
+
+# The skip-bucket label for a SKU we refuse to write because a UoM name would poison the save.
+# A distinct bucket from "no default UoM" and from already-correct no-ops.
+POISON_SKIP_REASON = "skipped — has a UoM with an invalid name (poisons whole-product save)"
+
+
+def find_poisoning_uoms(raw: Mapping[str, Any]) -> list[tuple[str, Any]]:
+    """All (code, name) of UoMs on the product whose name fails CC's 3–64 char rule. Empty = none.
+
+    The hard lesson from the M-DIMS-5d live bulk: CartonCloud validates the **entire** UoM set on
+    ANY UoM dims PATCH. So a single sibling UoM with an invalid name — in practice the carton UoM
+    named ``"CT"`` (2 chars) — 422s a dims write to *every* UoM on that product, INCLUDING the each
+    (the 5d run died on HL-6VA with a ``/unitOfMeasures/CT/name`` error while writing the EA). The
+    each-probe missed this because it only checked the each's OWN name was valid, not its siblings'.
+
+    **General, not CT-specific:** the criterion is name LENGTH (missing / <3 / >64), via
+    ``uom_name_status`` — CT is just the instance we've hit; any short/long-named UoM poisons the
+    same way, so the guard is robust to ones we haven't seen. Name-based, not presence-based: a CT
+    UoM with a VALID name does NOT poison, so fixing UoM names (by hand in CC) auto-unblocks those
+    SKUs with no code change. Returns every offender (the ``code``, falling back to the map key) so
+    the skip reason can name them all.
+    """
+    out: list[tuple[str, Any]] = []
+    for uom_key, obj in (raw.get("unitOfMeasures") or {}).items():
+        obj = obj or {}
+        if not uom_name_status(obj.get("name")).ok:
+            out.append(((obj.get("code") or uom_key), obj.get("name")))
+    return out
 
 
 @dataclass(frozen=True)
@@ -129,11 +159,14 @@ def build_bulk_plan(
     config: WriteConfig,
     uom_resolver: Callable[[Mapping[str, Any]], str | None] = resolve_default_uom,
     no_uom_reason: str = "no default UoM",
+    block_on_poisoning_uom: bool = False,
 ) -> BulkPlan:
     """Read each candidate (W4 read-before-write) and bucket it: writable / no-op / skipped.
 
     - no captured desired dims       -> skipped
     - ``uom_resolver`` returns None  -> skipped with ``no_uom_reason``
+    - ``block_on_poisoning_uom`` and a sibling UoM name is invalid -> skipped "blocked: …" (the
+      each-write opt-in; see ``find_poisoning_uom`` — a 2-char ``CT`` name 422s the each write too)
     - desired == current (no diff)   -> no-op (already correct; never written)
     - otherwise                      -> writable, with NaN/None-filtered desired + the diff
 
@@ -160,6 +193,12 @@ def build_bulk_plan(
         if not target_uom:
             skipped.append({"code": cand.code, "reason": no_uom_reason})
             continue
+        if block_on_poisoning_uom:
+            poisoned = find_poisoning_uoms(read.raw)
+            if poisoned:
+                codes = ", ".join(str(code) for code, _name in poisoned)
+                skipped.append({"code": cand.code, "reason": f"{POISON_SKIP_REASON}: {codes}"})
+                continue
         current_dims = dims_for_uom(read.raw, target_uom)
         desired_dims = {
             f: desired[f] for f in DIM_FIELDS if f in desired and _is_writable_value(desired[f])
@@ -196,6 +235,7 @@ def _run_bulk(
     sleep: Callable[[float], None],
     pace_seconds: float | None,
     label: str,
+    block_on_poisoning_uom: bool = False,
 ) -> BulkReport:
     """The proven bulk loop, shared by the sandbox/each soak (M-DIMS-4) and the CT carton bulk
     (M-DIMS-5c). The ONLY things a caller varies are injected: which customer to ``gather``, the
@@ -227,6 +267,7 @@ def _run_bulk(
     plan = build_bulk_plan(
         client, cands, desired_lookup, config=config,
         uom_resolver=uom_resolver, no_uom_reason=no_uom_reason,
+        block_on_poisoning_uom=block_on_poisoning_uom,
     )
 
     # 3. batch hard stop — one go covers the whole batch.
@@ -377,6 +418,14 @@ def run_each_bulk(
     a pre-cm 10× ``255``) differs from the captured cm desired (``25.5``), the W4 diff is non-empty
     and the SKU PATCHes to the correct cm value — the bulk run corrects them for free; where it
     already matches, it no-ops.
+
+    **CT-poison guard (``block_on_poisoning_uom=True``).** The first live 5d bulk fail-fast halted
+    on HL-6VA with a ``/unitOfMeasures/CT/name`` 422 while writing the EACH: CC validates the whole
+    UoM set on any dims PATCH, so a SKU's 2-char ``CT`` name poisons a write to its each too. So a
+    SKU with a name-invalid sibling UoM (``find_poisoning_uom``) is SKIPPED "blocked: …" — not
+    attempted, so the run completes the clean EA-only cohort instead of dying on the first
+    CT-bearing SKU. Name-based: a CT UoM with a valid name does not block, so fixing CT names (by
+    hand in CC) auto-unblocks those SKUs.
     """
     return _run_bulk(
         client=client, config=config,
@@ -387,6 +436,7 @@ def run_each_bulk(
         approval_token=approval_token, confirm=confirm,
         rate_limiter=rate_limiter, registry=registry, sleep=sleep, pace_seconds=pace_seconds,
         label="M-DIMS-5d",
+        block_on_poisoning_uom=True,
     )
 
 
@@ -403,14 +453,20 @@ def format_each_bulk_report(report: BulkReport) -> str:
     n_failed = 1 if report.failed else 0
     cohort = n_written + len(report.no_ops) + n_failed + len(report.untouched_after_failure)
     n_no_each = sum(1 for s in report.skipped if s.get("reason") == "no default UoM")
+    blocked = [s for s in report.skipped if str(s.get("reason", "")).startswith(POISON_SKIP_REASON)]
 
     lines = [
         "=== M-DIMS-5d — Each/Base UoM dims bulk result ===",
-        f"  Each cohort (live Forage SKUs WITH a default UoM) : {cohort}",
-        f"  dims written + verified on the each this run      : {n_written} of {cohort}",
-        f"  already-correct (no-op)                           : {len(report.no_ops)}",
-        f"  skipped — no default UoM (none expected live)     : {n_no_each}",
+        f"  Each cohort (writable: default UoM, no name-poisoned UoM) : {cohort}",
+        f"  dims written + verified on the each this run             : {n_written} of {cohort}",
+        f"  already-correct (no-op)                                  : {len(report.no_ops)}",
+        f"  name-poisoned (skipped — invalid UoM name blocks save)   : {len(blocked)}",
+        f"  skipped — no default UoM (none expected live)            : {n_no_each}",
     ]
+    if blocked:
+        lines.append("    name-poisoned SKUs (fix the named UoM's name in CC, then re-run to attach dims):")
+        for s in sorted(blocked, key=lambda x: x["code"]):
+            lines.append(f"      {s['code']:<16} {s['reason']}")
     if report.aborted:
         lines.append("  ABORTED at the batch hard stop — nothing written.")
     if report.failed:
@@ -420,6 +476,10 @@ def format_each_bulk_report(report: BulkReport) -> str:
         "",
         "  SCOPE — read this honestly:",
         "    - dims are written to the EACH / Base UoM (defaultUnitOfMeasure), in cm.",
+        "    - NAME-POISONED SKUs have a UoM (in practice the carton 'CT', 2 chars) whose name "
+        "fails CC's 3–64 rule; CC validates the WHOLE UoM set on any dims PATCH, so dims can't "
+        "attach to their each EITHER until that name is fixed in CC. Skipped, not written — not a "
+        "failure. Name-length based, so any short/long-named UoM is caught, not just CT.",
         "    - the CT carton UoM is OUT of scope (CLOSED): CC rejects CT dims because the CT UoM "
         "name fails validation, and CT names are not edited on live master.",
         "    - SKUs that already carried each dims are corrected in place by the idempotent diff "

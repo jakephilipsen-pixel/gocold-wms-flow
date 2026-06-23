@@ -21,7 +21,10 @@ import time
 import httpx
 import pytest
 
-from dims_write.bulk import run_each_bulk, format_each_bulk_report, resolve_default_uom, BulkReport
+from dims_write.bulk import (
+    run_each_bulk, format_each_bulk_report, resolve_default_uom, build_bulk_plan,
+    find_poisoning_uoms, POISON_SKIP_REASON, BulkReport,
+)
 from dims_write.live_proving import LiveCandidate
 from dims_write.roundtrip import DimsRoundtripRefused
 from cc_client.client import CartonCloudClient, _Token
@@ -263,6 +266,95 @@ def test_run_each_bulk_gathers_live_candidates_when_none(monkeypatch):
     )
     assert seen.get("called") is True
     assert {w["code"] for w in report.written} == {"FP-1"}
+
+
+# ============================================================================
+# The CT-poison guard — CC validates the WHOLE UoM set on any dims PATCH, so a 2-char CT name
+# 422s a write to the EACH too. The each-write must SKIP such SKUs, not fail-fast on them.
+# ============================================================================
+
+def _each_with_ct(pid, code, *, ct_name="CT", ea_name="Each"):
+    """A live SKU with a valid-named EA (the target) AND a CT sibling whose name may be too short.
+    A 2-char CT name poisons the whole-product save — a PATCH to the EA 422s on /unitOfMeasures/CT/name."""
+    return _product(pid, code, uoms={"EA": _uom(name=ea_name), "CT": _uom(code="CT", name=ct_name)},
+                    default="EA")
+
+
+def test_find_poisoning_uoms_flags_short_ct_name():
+    raw = _each_with_ct("p", "FP-1")  # CT name "CT" (2 chars) < the 3-char floor
+    assert find_poisoning_uoms(raw) == [("CT", "CT")]
+
+
+def test_find_poisoning_uoms_is_general_not_ct_specific():
+    # Empty name and 1-char name on a NON-CT UoM are also caught — the rule is name length, not "CT".
+    empty = _product("p", "FP-1", uoms={"EA": _uom(name="Each"), "XX": _uom(code="XX", name="")},
+                     default="EA")
+    one_char = _product("q", "FP-2", uoms={"EA": _uom(name="Each"), "YY": _uom(code="YY", name="Z")},
+                        default="EA")
+    assert find_poisoning_uoms(empty) == [("XX", "")]
+    assert find_poisoning_uoms(one_char) == [("YY", "Z")]
+
+
+def test_find_poisoning_uoms_none_when_all_names_valid():
+    assert find_poisoning_uoms(_each("c1", "FP-1")) == []                          # EA-only, valid
+    assert find_poisoning_uoms(_each_with_ct("p", "FP-1", ct_name="Carton")) == []  # CT name valid
+
+
+def test_run_each_bulk_skips_ct_bearing_sku_and_does_not_fail_fast():
+    # The HL-6VA reproduction: an EA-only SKU writes; the CT-bearing SKU (poisoned CT name) is
+    # SKIPPED as blocked — NOT attempted, so no 422, no fail-fast, the run completes.
+    ok = _each("c1", "FP-1")
+    poisoned = _each_with_ct("c2", "HL-6VA")
+    ok2 = _each("c3", "FP-9")
+    client = _client_with(ok, poisoned, ok2)
+    desired = {c: {"length": 30.0, "width": 20.0, "height": 10.0, "weight": 1.0}
+               for c in ("FP-1", "HL-6VA", "FP-9")}
+    cands = [LiveCandidate("c1", "FP-1"), LiveCandidate("c2", "HL-6VA"), LiveCandidate("c3", "FP-9")]
+
+    report = run_each_bulk(
+        client=client, config=_cfg(live_promotion=True), desired_lookup=lambda c: desired.get(c),
+        approval_token=SECRET, confirm=lambda plan: True, candidates=cands,
+        sleep=lambda s: None, pace_seconds=0,
+    )
+
+    assert report.failed is None, "the poisoned SKU is skipped, never attempted → no fail-fast"
+    assert {w["code"] for w in report.written} == {"FP-1", "FP-9"}
+    blocked = {s["code"]: s["reason"] for s in report.skipped}
+    assert "HL-6VA" in blocked and "CT" in blocked["HL-6VA"] and "poison" in blocked["HL-6VA"].lower()
+    # the poisoned product was never PATCHed.
+    assert "c2" not in {c["pid"] for c in client._http.patches}
+
+
+def test_run_each_bulk_writes_ct_bearing_sku_when_ct_name_is_valid():
+    # Name-based, not presence-based: a CT sibling with a VALID name does NOT block the each write,
+    # so fixing CT names later auto-unblocks these SKUs without a code change.
+    p = _each_with_ct("c1", "FP-1", ct_name="Carton")
+    client = _client_with(p)
+    report = run_each_bulk(
+        client=client, config=_cfg(live_promotion=True),
+        desired_lookup=lambda c: {"length": 30.0, "width": 20.0, "height": 10.0},
+        approval_token=SECRET, confirm=lambda plan: True,
+        candidates=[LiveCandidate("c1", "FP-1")], sleep=lambda s: None, pace_seconds=0,
+    )
+    assert {w["code"] for w in report.written} == {"FP-1"}
+    for c in client._http.patches:
+        assert all(op["path"].startswith("/unitOfMeasures/EA/") for op in c["json"])
+
+
+def test_build_bulk_plan_only_blocks_when_flag_set():
+    # The guard is opt-in (each-write passes it). Without the flag, behaviour is unchanged so the
+    # CT/sandbox paths are untouched.
+    client = _client_with(_each_with_ct("c1", "FP-1"))
+    cands = [LiveCandidate("c1", "FP-1")]
+    desired = lambda c: {"length": 30.0, "width": 20.0, "height": 10.0}
+
+    unguarded = build_bulk_plan(client, cands, desired, config=_cfg(), uom_resolver=resolve_default_uom)
+    assert [i.code for i in unguarded.to_write] == ["FP-1"], "no guard → would still try to write"
+
+    guarded = build_bulk_plan(client, cands, desired, config=_cfg(), uom_resolver=resolve_default_uom,
+                              block_on_poisoning_uom=True)
+    assert guarded.to_write == []
+    assert guarded.skipped[0]["code"] == "FP-1" and "poison" in guarded.skipped[0]["reason"].lower()
 
 
 # ============================================================================

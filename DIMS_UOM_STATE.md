@@ -2,16 +2,43 @@
 
 State of the dims→CartonCloud sync, by unit-of-measure. Source of truth for "where do dims go".
 
-_Last updated: 23 Jun 2026 (M-DIMS-5d each-write built, not yet run live)._
+_Last updated: 23 Jun 2026 (M-DIMS-5d each-write: cm confirmed live, 132 written, name-poison guard added)._
 
 ## TL;DR
 
-- **Each / Base UoM (`defaultUnitOfMeasure`) — THE dims pipeline.** Automated target. Every live
-  Forage SKU has one; all 455 names are valid, so the each accepts dims. Written in **cm**.
-  Built: `dims_write.run_each_bulk` + `scripts/run_dims_each_bulk.py` (M-DIMS-5d). Live-gated
-  (`CC_LIVE_PROMOTION`, default-closed), batch hard stop, fail-fast, `finalize_exit` safeguard.
-  **Not yet run live** — first run is Jake's deliberate few-SKU cm test (`--only …`), eyeballed
-  in CC, before any bulk.
+- **Each / Base UoM (`defaultUnitOfMeasure`) — THE dims pipeline.** Automated target, written in
+  **cm**. Built: `dims_write.run_each_bulk` + `scripts/run_dims_each_bulk.py` (M-DIMS-5d).
+  Live-gated (`CC_LIVE_PROMOTION`, default-closed), batch hard stop, fail-fast, `finalize_exit`.
+  **cm CONFIRMED LIVE** (few-SKU test BB-2CH/CL/SS, eyeballed in CC: BB-2CL = 23×14×20.5 for a
+  1.3 kg 6-pack, physically sensible). The full bulk then wrote **132 SKUs** before halting (see
+  the name-poison finding) — those 132 are correct cm and live. Re-run is idempotent (the 132
+  no-op).
+
+## ⚠ The name-poison finding (M-DIMS-5d live bulk, 23 Jun 2026)
+
+The bulk fail-fast halted on **HL-6VA** with a 422 on `/unitOfMeasures/CT/name` — **even though
+the write targeted EA, not CT.** Conclusion: **CartonCloud validates the ENTIRE product UoM set on
+any UoM dims PATCH.** So a UoM with an invalid name (the carton `CT`, 2 chars) poisons a dims write
+to *every* UoM on that product, **including the each**. The each-probe missed this — it checked
+each names were valid but not that a sibling CT name would block the each write.
+
+**Guard added (`block_on_poisoning_uom`, on by default in `run_each_bulk`):** before writing a
+SKU's each, `find_poisoning_uoms` inspects the whole UoM set; if ANY UoM name fails CC's 3–64 rule
+the SKU is **skipped** — `"skipped — has a UoM with an invalid name (poisons whole-product save):
+{codes}"` — not attempted, so the run completes the clean cohort instead of fail-fasting.
+**General, name-length based (not CT-hardcoded)** — robust to any short/long-named UoM; and a CT
+UoM with a *valid* name would NOT be skipped, so fixing names auto-unblocks. Fail-fast stays for
+genuine unexpected write failures.
+
+**Cohort math (full disarmed preview, 23 Jun, with the guard):** 180 writable · 135 already-correct
+(incl. the 132) · **5 name-poisoned & skipped** (FB-PSM, HL-6HH, HL-6SC, HL-6VA, TSP-OYS) · 135 no
+captured dims. So in the *current* sheet only **5** SKUs are blocked from getting each dims by the
+CT-name problem — not ~88: the other CT-bearing SKUs had their carton dims deleted, so they have no
+each dims to write anyway. The run now completes; those 5 attach once their CT name is fixed in CC.
+
+**Open question for Jake (not Code):** is the 2-char CT name fixable on live master (CC UI bulk
+edit / CC support / a different API)? If 5 (or more, as new dims are captured) SKUs can never get
+dims because of an unfixable name, that's a rulebook gap worth one more push before accepting.
 - **CT carton UoM — CLOSED, not written.** Will NOT be written by automation. Two reasons:
   1. **CC name-validation.** Writing any dim sub-field forces CC to validate the whole CT UoM
      object; every live CT UoM is named `"CT"` (2 chars), below CC's 3–64 char rule → 422 on
