@@ -184,6 +184,21 @@ until the slotting logic has been validated against reality for a quarter.
   (it refuses to write to Forage until that approved change is made).
   Run previews with `scripts/run_dims_shadow_validate.py` (no write); the
   human-gated write is `scripts/run_dims_sandbox_roundtrip.py`.
+- **M-DIMS-5c (CT carton-UoM write) is DROPPED from automated scope — CC-side
+  name trap, not a code bug.** The armed 5c run fail-fast halted on AE-BLA with
+  a 422 `{"field":"/unitOfMeasures/CT/name","message":"Must be between 3 and 64
+  characters."}`. A read-only census (`scripts/probe_ct_uom_names.py` →
+  `dims_write.ct_probe`, 23 Jun 2026) found **all 81 live CT UoMs are named
+  `"CT"` (2 chars), 0 valid** — adding a dim under `/unitOfMeasures/CT/` makes CC
+  validate the whole UoM object and its name is below the 3-char floor. Fixing CT
+  names is a **manual CC-UI job Jake will do by hand**, so the automated target
+  moves to the **Each / Base UoM** (every SKU has one). Before building that
+  each-write, probe the Base UoM the same way, read-only:
+  `scripts/probe_each_uom_names.py` → `dims_write.each_probe` buckets each SKU
+  each-writable / each-blocked (same name trap) / no-each. Shared name-validation
+  lives in `dims_write.uom_name` (CC's 3–64 char rule). Do NOT build the
+  each-write until the probe shows the Base UoM cohort is clean (or names which
+  are name-blocked).
 - Now that dims exist locally, next build:
     - Slotting recommendations: which SKU at which bay height
       (1500/1100/750mm) given (cube × velocity × replen frequency)
