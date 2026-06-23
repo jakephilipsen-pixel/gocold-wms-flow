@@ -34,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from cc_client import CartonCloudClient, WriteConfig  # noqa: E402
 from dims_write import (  # noqa: E402
     build_live_proving_plan,
+    captured_cc_dims_table,
     run_live_proving,
     finalize_exit,
     LiveHardStopInfo,
@@ -58,18 +59,12 @@ def _load_dotenv(path: Path) -> None:
 
 
 def _captured_table(dims_path: Path) -> dict[str, dict]:
-    """Captured dims keyed by base Forage code (fully-measured L/W/H only); same as 5a/5b."""
-    df = load_dimensions(dims_path)
-    table: dict[str, dict] = {}
-    for _, row in df.iterrows():
-        code = str(row["product_code"]).strip()
-        dims = {
-            "length": row.get("outer_l_mm"), "width": row.get("outer_w_mm"),
-            "height": row.get("outer_h_mm"), "weight": row.get("outer_weight_kg"),
-        }
-        if all(v is not None and v == v for v in (dims["length"], dims["width"], dims["height"])):
-            table[code] = dims
-    return table
+    """Captured dims keyed by base Forage code (fully-measured L/W/H only); same as 5a/5b.
+
+    Captured in mm, converted to CartonCloud's unit (cm L/W/H, kg weight) by
+    `captured_cc_dims_table` at this write boundary.
+    """
+    return captured_cc_dims_table(load_dimensions(dims_path))
 
 
 def _print_plan(plan: LiveProvingPlan) -> None:
