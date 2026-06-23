@@ -83,6 +83,35 @@ def test_no_false_substring_match():
     not (_ROOT / "dims.ods").exists(),
     reason="dims.ods not present",
 )
+def test_each_rework_headers_resolve(monkeypatch):
+    """The Jun-2026 each-rework relabelled the kept per-each dims "Each * (mm)" and the
+    carton-qty column "CT Qty per pallet" (carton/"Outer" dims split out). These must resolve to
+    the same normalised columns the write path reads — still mm (÷10 to cm happens at the CC
+    boundary, not here)."""
+    sheet = pd.DataFrame({
+        "Product Code": ["BB-2CH", "AE-2CB"],
+        "Each L (mm)": [230, None],          # AE-2CB's carton dims were deleted → blank → skipped
+        "Each W (mm)": [140, None],
+        "Each H (mm)": [205, None],
+        "Each Weight (kg)": [1.3, None],
+        "Inner Pack Qty Per CT": [6, 6],
+        "CT Qty per pallet": [40, 40],
+        "Pallet height 1, 2 or 3": [2, 2],
+        "layers per pallet": [5, 5],
+    })
+    monkeypatch.setattr("analysis.dim_loader.pd.read_excel", lambda *a, **k: sheet)
+
+    df = load_dimensions(Path("ignored.xlsx"))
+
+    row = df.set_index("product_code").loc["BB-2CH"]
+    assert (row["outer_l_mm"], row["outer_w_mm"], row["outer_h_mm"]) == (230, 140, 205)
+    assert row["outer_weight_kg"] == 1.3
+    assert int(df.set_index("product_code").loc["AE-2CB", "cartons_per_pallet"]) == 40
+    # BB-2CH is fully measured; AE-2CB (dims deleted) is not → the write path skips it.
+    assert bool(row["measurement_complete"]) is True
+    assert bool(df.set_index("product_code").loc["AE-2CB", "measurement_complete"]) is False
+
+
 def test_june_ods_template_loads():
     """The June-2026 ODS (renamed columns) must load, not raise."""
     odf = pytest.importorskip("odf")  # noqa: F841 - just gate on the engine

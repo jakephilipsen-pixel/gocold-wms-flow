@@ -135,14 +135,17 @@ def load_dimensions(path: Path) -> pd.DataFrame:
     df = pd.read_excel(path, sheet_name="SKU Capture", header=3)
     df = df[df["Product Code"].notna()].copy()
 
-    # Resolve column names (tolerate v1/v2 templates)
-    col_l = _find_col(df, "Outer L (mm)")
-    col_w = _find_col(df, "Outer W (mm)")
-    col_h = _find_col(df, "Outer H (mm)")
-    col_weight = _find_col(df, "Outer Weight (kg)")
+    # Resolve column names (tolerate v1/v2 templates, and the Jun-2026 each-rework where the
+    # carton/"Outer" dims were split out and the kept per-each dims were relabelled "Each * (mm)"
+    # with quantities under "* per CT"). Still mm — values are divided to cm at the CC write
+    # boundary, not here.
+    col_l = _find_col(df, "Each L (mm)", "Outer L (mm)")
+    col_w = _find_col(df, "Each W (mm)", "Outer W (mm)")
+    col_h = _find_col(df, "Each H (mm)", "Outer H (mm)")
+    col_weight = _find_col(df, "Each Weight (kg)", "Outer Weight (kg)")
     col_inner = _find_col(df, "Inner Pack Qty")
     col_cpp = _find_col(
-        df, "Outer Carton Qty per pallet", "Outer Carton Qty",
+        df, "CT Qty per pallet", "Outer Carton Qty per pallet", "Outer Carton Qty",
     )
     col_layers = _find_col(
         df,

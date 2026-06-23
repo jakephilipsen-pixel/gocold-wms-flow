@@ -196,9 +196,27 @@ until the slotting logic has been validated against reality for a quarter.
   each-write, probe the Base UoM the same way, read-only:
   `scripts/probe_each_uom_names.py` → `dims_write.each_probe` buckets each SKU
   each-writable / each-blocked (same name trap) / no-each. Shared name-validation
-  lives in `dims_write.uom_name` (CC's 3–64 char rule). Do NOT build the
-  each-write until the probe shows the Base UoM cohort is clean (or names which
-  are name-blocked).
+  lives in `dims_write.uom_name` (CC's 3–64 char rule). Probe verdict: Base UoM
+  cohort is CLEAN (455/455 valid), so the each-write is unblocked.
+- **M-DIMS-5d (Each/Base UoM dims write) BUILT, CC-mocked, NOT run live.**
+  `dims_write.run_each_bulk` + `scripts/run_dims_each_bulk.py` — the same proven
+  engine as 5c with `resolve_default_uom` (the each) swapped in for the CT
+  resolver; dims written in cm via `captured_cc_dims_table`. Live-gated
+  (`CC_LIVE_PROMOTION`, default-closed), ONE batch hard stop, fail-fast,
+  `finalize_exit` still-armed safeguard. `--only CODES` restricts the run for
+  Jake's first deliberate few-SKU cm test (eyeball in CC, confirm cm) before the
+  bulk. **cm CONFIRMED LIVE; the bulk wrote 132 SKUs then hit the name-poison
+  finding** (below). CT carton UoM is CLOSED (out of automated scope).
+  - **Name-poison guard (`block_on_poisoning_uom`, default-on in `run_each_bulk`).**
+    The live bulk fail-fast halted on HL-6VA with a 422 on `/unitOfMeasures/CT/name`
+    *while writing EA* — CC validates the WHOLE product UoM set on any dims PATCH, so
+    a sibling UoM with an invalid name (the 2-char `CT`) poisons the each write too.
+    Guard: `find_poisoning_uoms` skips any SKU with a UoM whose name fails CC's 3–64
+    rule (general, name-length based — not CT-hardcoded; a valid CT name wouldn't
+    block, so fixing names auto-unblocks). Cohort now: 180 writable / 5 name-poisoned
+    & skipped (FB-PSM, HL-6HH, HL-6SC, HL-6VA, TSP-OYS) / rest no-op or no-dims. See
+    `DIMS_UOM_STATE.md`. NEXT: Jake reviews PR #27, then re-runs (132 no-op).
+    Open Q for Jake: is the 2-char CT name fixable on live master?
 - Now that dims exist locally, next build:
     - Slotting recommendations: which SKU at which bay height
       (1500/1100/750mm) given (cube × velocity × replen frequency)
