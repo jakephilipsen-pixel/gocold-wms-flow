@@ -42,6 +42,11 @@ from .bulk import (
     BulkPlanItem,
     BulkReport,
 )
+from .capture import (
+    mm_to_cm,
+    captured_cc_dims_table,
+    MM_PER_CM,
+)
 from .uom_name import (
     uom_name_status,
     UomNameStatus,
@@ -113,6 +118,9 @@ __all__ = [
     "BulkPlan",
     "BulkPlanItem",
     "BulkReport",
+    "mm_to_cm",
+    "captured_cc_dims_table",
+    "MM_PER_CM",
     "uom_name_status",
     "UomNameStatus",
     "UOM_NAME_MIN_CHARS",

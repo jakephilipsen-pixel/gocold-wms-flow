@@ -33,6 +33,7 @@ from dims_write import (  # noqa: E402
     gather_active_sandbox_candidates,
     select_writable_sandbox_sku,
     sandbox_desired_lookup,
+    captured_cc_dims_table,
 )
 from analysis.dim_loader import load_dimensions  # noqa: E402
 
@@ -52,23 +53,13 @@ def _load_dotenv(path: Path) -> None:
 
 
 def _build_desired_lookup(dims_path: Path):
-    """Sandbox SKU code → captured {length,width,height,weight} (mm/kg, no conversion).
+    """Sandbox SKU code → captured {length,width,height,weight} in CC units (cm / kg).
 
     Identical to the live round-trip's lookup so shadow selects the SAME SKU live would.
-    Only fully-measured SKUs (L/W/H present) are offered.
+    `captured_cc_dims_table` converts the mm capture columns to centimetres (CC's unit) and
+    offers only fully-measured SKUs (L/W/H present).
     """
-    df = load_dimensions(dims_path)
-    table: dict[str, dict] = {}
-    for _, row in df.iterrows():
-        code = str(row["product_code"]).strip()
-        dims = {
-            "length": row.get("outer_l_mm"),
-            "width": row.get("outer_w_mm"),
-            "height": row.get("outer_h_mm"),
-            "weight": row.get("outer_weight_kg"),
-        }
-        if all(v is not None and v == v for v in (dims["length"], dims["width"], dims["height"])):
-            table[code] = dims
+    table = captured_cc_dims_table(load_dimensions(dims_path))
     return sandbox_desired_lookup(table)
 
 

@@ -51,6 +51,7 @@ from dims_write import (  # noqa: E402
     resolve_ct_uom,
     format_ct_bulk_report,
     sandbox_desired_lookup,
+    captured_cc_dims_table,
     gather_active_live_candidates,
     finalize_exit,
     BulkPlan,
@@ -76,21 +77,12 @@ def _load_dotenv(path: Path) -> None:
 def _captured_table(dims_path: Path) -> dict[str, dict]:
     """Captured CARTON/outer dims keyed by base Forage code (fully-measured L/W/H only).
 
-    The same table 5a/5b use. These are OUTER carton dims (mm L/W/H, kg weight) — exactly what
-    belongs on the CT carton UoM. Only SKUs with full L/W/H are offered; a missing/NaN weight is
-    handled downstream (written without weight, not skipped).
+    The same table 5a/5b use. These are OUTER carton dims — captured in mm, converted to
+    CartonCloud's unit (cm L/W/H, kg weight) by `captured_cc_dims_table` — exactly what belongs
+    on the CT carton UoM. Only SKUs with full L/W/H are offered; a missing/NaN weight is handled
+    downstream (written without weight, not skipped).
     """
-    df = load_dimensions(dims_path)
-    table: dict[str, dict] = {}
-    for _, row in df.iterrows():
-        code = str(row["product_code"]).strip()
-        dims = {
-            "length": row.get("outer_l_mm"), "width": row.get("outer_w_mm"),
-            "height": row.get("outer_h_mm"), "weight": row.get("outer_weight_kg"),
-        }
-        if all(v is not None and v == v for v in (dims["length"], dims["width"], dims["height"])):
-            table[code] = dims
-    return table
+    return captured_cc_dims_table(load_dimensions(dims_path))
 
 
 def _render_plan(plan: BulkPlan) -> str:

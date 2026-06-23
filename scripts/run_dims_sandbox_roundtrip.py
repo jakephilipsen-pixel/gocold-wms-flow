@@ -33,6 +33,7 @@ from cc_client import CartonCloudClient, WriteConfig  # noqa: E402
 from dims_write import (  # noqa: E402
     run_sandbox_roundtrip,
     sandbox_desired_lookup,
+    captured_cc_dims_table,
     DimsRoundtripError,
     HardStopInfo,
 )
@@ -52,24 +53,15 @@ def _load_dotenv(path: Path) -> None:
 
 
 def _build_desired_lookup(dims_path: Path):
-    """Sandbox SKU code → real captured {length,width,height,weight} (mm / kg, no conversion).
+    """Sandbox SKU code → real captured {length,width,height,weight} in CC units (cm / kg).
 
     The capture template is keyed by the BASE Forage code (RK-001); the sandbox SKUs are
     s-prefixed mirrors (sRK-001). `sandbox_desired_lookup` resolves the prefix — see its
-    docstring + GROUND_TRUTH §5. Only fully-measured SKUs (L/W/H present) are offered.
+    docstring + GROUND_TRUTH §5. `captured_cc_dims_table` reads the mm capture columns,
+    converts L/W/H to centimetres (CC's unit), keeps weight in kg, and offers only
+    fully-measured SKUs (L/W/H present).
     """
-    df = load_dimensions(dims_path)
-    table: dict[str, dict] = {}
-    for _, row in df.iterrows():
-        code = str(row["product_code"]).strip()
-        dims = {
-            "length": row.get("outer_l_mm"),
-            "width": row.get("outer_w_mm"),
-            "height": row.get("outer_h_mm"),
-            "weight": row.get("outer_weight_kg"),
-        }
-        if all(v is not None and v == v for v in (dims["length"], dims["width"], dims["height"])):
-            table[code] = dims
+    table = captured_cc_dims_table(load_dimensions(dims_path))
     return sandbox_desired_lookup(table)
 
 

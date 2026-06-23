@@ -29,6 +29,7 @@ from cc_client import CartonCloudClient, WriteConfig  # noqa: E402
 from dims_write import (  # noqa: E402
     run_sandbox_bulk,
     sandbox_desired_lookup,
+    captured_cc_dims_table,
     BulkPlan,
     DimsRoundtripError,
 )
@@ -50,23 +51,13 @@ def _load_dotenv(path: Path) -> None:
 
 
 def _build_desired_lookup(dims_path: Path):
-    """Sandbox SKU code → captured {length,width,height,weight} (mm/kg, no conversion).
+    """Sandbox SKU code → captured {length,width,height,weight} in CC units (cm / kg).
 
-    Same lookup the single round-trip uses; only fully-measured SKUs (L/W/H present) are
-    offered. Missing/NaN weight is handled downstream (written without weight, not skipped).
+    Same lookup the single round-trip uses; `captured_cc_dims_table` converts the mm capture
+    columns to centimetres (CC's unit) and offers only fully-measured SKUs (L/W/H present).
+    Missing/NaN weight is handled downstream (written without weight, not skipped).
     """
-    df = load_dimensions(dims_path)
-    table: dict[str, dict] = {}
-    for _, row in df.iterrows():
-        code = str(row["product_code"]).strip()
-        dims = {
-            "length": row.get("outer_l_mm"),
-            "width": row.get("outer_w_mm"),
-            "height": row.get("outer_h_mm"),
-            "weight": row.get("outer_weight_kg"),
-        }
-        if all(v is not None and v == v for v in (dims["length"], dims["width"], dims["height"])):
-            table[code] = dims
+    table = captured_cc_dims_table(load_dimensions(dims_path))
     return sandbox_desired_lookup(table)
 
 

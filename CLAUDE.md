@@ -168,7 +168,14 @@ until the slotting logic has been validated against reality for a quarter.
   LANDED** (M-DIMS-3, 21 Jun 2026). One sandbox SKU (`sHL-BWC`) got full
   L/W/H + weight written to CC and read-back verified, via `src/dims_write/`
   (the W0–W5 gate chain → human hard stop → PATCH warehouse-products UoM under
-  v8 → read-back). Units confirmed correct via CC product download. The earlier
+  v8 → read-back). **UNITS CORRECTION (23 Jun 2026): CC's UoM L/W/H are
+  CENTIMETRES, not mm** (Jake, confirmed against the CC UI — supersedes the
+  earlier "mm" read-back). The capture template is in mm, so the dims-write
+  scripts now convert mm→cm (÷10) at the write boundary via
+  `dims_write.captured_cc_dims_table` (weight stays kg). ⚠ Dims already written
+  live before this fix (`sHL-BWC` sandbox + the 4 EA Forage SKUs from M-DIMS-5b)
+  are 10× too large and need correcting in a separate, deliberately-armed run.
+  The earlier
   `dim-capture-app/` legacy-API approach (Bearer key, `/products` PATCH on
   `app.cartoncloud.com.au/api/v1`) is **superseded** — the live OAuth2 API
   writes dims natively (see gotcha #6 for the recipe). Remaining before the
