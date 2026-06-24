@@ -412,12 +412,12 @@ def run_each_bulk(
     ``CC_LIVE_PROMOTION`` precondition (the live id is writable only when armed; W3 re-checks per
     write). The ONLY difference from 5c is the resolver: ``resolve_default_uom`` (the each), not
     ``resolve_ct_uom``. A product with no default UoM (none live, per the probe) is skipped, never
-    written. Dims arrive in cm via ``captured_cc_dims_table`` (the script's concern).
+    written. Dims arrive in metres via ``captured_cc_dims_table`` (the script's concern).
 
     The 15 SKUs that already carry Base-UoM dims are NOT special-cased: where a stored value (e.g.
-    a pre-cm 10× ``255``) differs from the captured cm desired (``25.5``), the W4 diff is non-empty
-    and the SKU PATCHes to the correct cm value — the bulk run corrects them for free; where it
-    already matches, it no-ops.
+    a stale wrong-magnitude ``255``) differs from the captured metres desired (``0.255``), the W4
+    diff is non-empty and the SKU PATCHes to the correct metres value — the bulk run corrects them
+    for free; where it already matches, it no-ops.
 
     **CT-poison guard (``block_on_poisoning_uom=True``).** The first live 5d bulk fail-fast halted
     on HL-6VA with a ``/unitOfMeasures/CT/name`` 422 while writing the EACH: CC validates the whole
@@ -475,7 +475,7 @@ def format_each_bulk_report(report: BulkReport) -> str:
     lines += [
         "",
         "  SCOPE — read this honestly:",
-        "    - dims are written to the EACH / Base UoM (defaultUnitOfMeasure), in cm.",
+        "    - dims are written to the EACH / Base UoM (defaultUnitOfMeasure), in metres.",
         "    - NAME-POISONED SKUs have a UoM (in practice the carton 'CT', 2 chars) whose name "
         "fails CC's 3–64 rule; CC validates the WHOLE UoM set on any dims PATCH, so dims can't "
         "attach to their each EITHER until that name is fixed in CC. Skipped, not written — not a "
@@ -483,7 +483,7 @@ def format_each_bulk_report(report: BulkReport) -> str:
         "    - the CT carton UoM is OUT of scope (CLOSED): CC rejects CT dims because the CT UoM "
         "name fails validation, and CT names are not edited on live master.",
         "    - SKUs that already carried each dims are corrected in place by the idempotent diff "
-        "(e.g. a stale 10× value → the captured cm value), not special-cased.",
+        "(e.g. a stale wrong-magnitude value → the captured metres value), not special-cased.",
     ]
     return "\n".join(lines)
 

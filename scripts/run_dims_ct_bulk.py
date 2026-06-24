@@ -78,7 +78,7 @@ def _captured_table(dims_path: Path) -> dict[str, dict]:
     """Captured CARTON/outer dims keyed by base Forage code (fully-measured L/W/H only).
 
     The same table 5a/5b use. These are OUTER carton dims — captured in mm, converted to
-    CartonCloud's unit (cm L/W/H, kg weight) by `captured_cc_dims_table` — exactly what belongs
+    CartonCloud's unit (metres L/W/H, kg weight) by `captured_cc_dims_table` — exactly what belongs
     on the CT carton UoM. Only SKUs with full L/W/H are offered; a missing/NaN weight is handled
     downstream (written without weight, not skipped).
     """

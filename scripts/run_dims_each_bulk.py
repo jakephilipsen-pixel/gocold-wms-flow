@@ -5,15 +5,15 @@ The automated dims pipeline. M-DIMS-5c (write to the CT carton UoM) is CLOSED, n
 rejects CT dims because the CT UoM name ("CT", 2 chars) fails its 3–64 char rule, and CT names
 can't be edited on live master. So dims go to the **Each / Base UoM** (`defaultUnitOfMeasure`) —
 every live Forage SKU has one, and the probe found all 455 names valid, so the each accepts dims
-cleanly. Dims are written in **centimetres** (`captured_cc_dims_table` converts the mm capture).
+cleanly. Dims are written in **metres** (`captured_cc_dims_table` converts the mm capture ÷1000).
 
 Reuse, don't fork: every write goes through the proven M-DIMS-4/5c bulk loop unchanged — the 5a
 gate, ONE batch hard stop, paced fail-fast, write_and_verify + read-back (of the each UoM), W4
 idempotency, the CC_LIVE_PROMOTION precondition. Only the UoM resolver differs (the each, not CT).
 
 The 15 SKUs that already carry each dims are NOT special-cased: where a stored value differs from
-the captured cm desired (e.g. a stale pre-cm 10× `255` vs `25.5`), the idempotent diff PATCHes it
-to the correct cm value; where it matches, it no-ops.
+the captured metres desired (e.g. a stale wrong-magnitude `255` vs `0.255`), the idempotent diff PATCHes it
+to the correct metres value; where it matches, it no-ops.
 
 Arm the gate in your shell FIRST (the 5a flag — nothing else opens the live id):
 
@@ -25,11 +25,11 @@ Arm the gate in your shell FIRST (the 5a flag — nothing else opens the live id
     unset CC_LIVE_PROMOTION               # the script LOUDLY reminds + exits non-zero if you forget
 
 Disarmed, the script is a safe PREVIEW: it builds + prints the full plan (every SKU -> its each
-UoM id -> cm dims -> diff) and writes nothing. Armed, it shows ONE batch hard stop with that same
+UoM id -> metres dims -> diff) and writes nothing. Armed, it shows ONE batch hard stop with that same
 plan and requires a single `go` before any PATCH; then fail-fast per SKU.
 
-FIRST RUN should be a deliberate few-SKU cm test: pass `--only FP-1,HI-2` to restrict the cohort,
-eyeball those SKUs in CC to confirm the dims landed in cm, THEN drop `--only` for the bulk.
+FIRST RUN should be a deliberate few-SKU metres test: pass `--only FP-1,HI-2` to restrict the cohort,
+eyeball those SKUs in CC to confirm the dims landed in metres, THEN drop `--only` for the bulk.
 """
 from __future__ import annotations
 
@@ -75,10 +75,10 @@ def _load_dotenv(path: Path) -> None:
 
 
 def _captured_table(dims_path: Path) -> dict[str, dict]:
-    """Captured dims keyed by base Forage code (fully-measured L/W/H only), in CC units (cm/kg).
+    """Captured dims keyed by base Forage code (fully-measured L/W/H only), in CC units (metres/kg).
 
     Same table 5a/5b/5c use — `captured_cc_dims_table` converts the mm capture columns to
-    centimetres (CC's unit). Only SKUs with full L/W/H are offered; a missing/NaN weight is handled
+    metres (CC's unit). Only SKUs with full L/W/H are offered; a missing/NaN weight is handled
     downstream (written without weight, not skipped).
     """
     return captured_cc_dims_table(load_dimensions(dims_path))
@@ -92,21 +92,21 @@ def _filter_only(candidates: list, only: set[str] | None) -> list:
 
 
 def _render_plan(plan: BulkPlan, *, scoped: bool) -> str:
-    """The full plan: each SKU -> its resolved each (default) UoM id -> cm dims -> diff.
+    """The full plan: each SKU -> its resolved each (default) UoM id -> metres dims -> diff.
 
     Shown both as the disarmed PREVIEW and as the armed batch hard stop, so a human sees the
-    each-UoM resolution + the cm dims for ALL targeted SKUs before any write.
+    each-UoM resolution + the metres dims for ALL targeted SKUs before any write.
     """
     lines = [
         "",
         "=" * 80,
-        "  M-DIMS-5d BATCH HARD STOP — LIVE FORAGE — Each/Base UoM dims (cm) for ALL",
+        "  M-DIMS-5d BATCH HARD STOP — LIVE FORAGE — Each/Base UoM dims (metres) for ALL",
         "=" * 80,
     ]
     if scoped:
         lines.append("  ⚠ SCOPED RUN (--only): a deliberate subset, NOT the full cohort.")
     lines.append(
-        f"  SKUs to write : {len(plan.to_write)}   (each -> its default UoM id -> cm dims -> diff)"
+        f"  SKUs to write : {len(plan.to_write)}   (each -> its default UoM id -> metres dims -> diff)"
     )
     for item in plan.to_write:
         lines.append(f"     {item.code:<14} each-uom={item.uom:<12} dims={item.desired_dims}  diff={item.diff}")
@@ -127,10 +127,10 @@ def _render_plan(plan: BulkPlan, *, scoped: bool) -> str:
     lines += [
         f"  endpoint : PATCH {plan.endpoint}  (per SKU, Accept-Version 8)",
         f"  write_enabled : {plan.write_enabled}    sandbox-base allow-list : {plan.allowlist_is_sandbox_only}",
-        "  Dims are in CENTIMETRES (captured mm ÷10). Eyeball a few in CC to confirm cm before bulk.",
+        "  Dims are in METRES (captured mm ÷1000). Eyeball a few in CC to confirm metres before bulk.",
         "  The live id is writable ONLY because CC_LIVE_PROMOTION is armed; W3 re-checks it per write.",
         "  Fail-fast: the first write/verify failure stops the run; earlier SKUs stay written (known-good).",
-        "  Already-dimensioned SKUs (incl. any stale 10× each) are corrected in place by the diff.",
+        "  Already-dimensioned SKUs (incl. any stale wrong-magnitude each) are corrected in place by the diff.",
         "=" * 80,
     ]
     return "\n".join(lines)
@@ -144,7 +144,7 @@ def _confirm_factory(scoped: bool):
             print("  Nothing to write (all no-op / skipped). Aborting.")
             return False
         answer = input(
-            f"Type 'go' to write Each/Base UoM dims (cm) to {len(plan.to_write)} LIVE Forage SKUs "
+            f"Type 'go' to write Each/Base UoM dims (metres) to {len(plan.to_write)} LIVE Forage SKUs "
             "(anything else aborts): "
         ).strip()
         return answer == "go"
@@ -157,7 +157,7 @@ def main() -> int:
     parser.add_argument("--dims-path", required=True, type=Path, help="captured dims template (.xlsx)")
     parser.add_argument("--env", type=Path, default=Path(".env"), help="path to .env (default ./.env)")
     parser.add_argument("--only", type=str, default=None,
-                        help="comma-separated SKU codes to restrict the run (the deliberate few-SKU cm test)")
+                        help="comma-separated SKU codes to restrict the run (the deliberate few-SKU metres test)")
     args = parser.parse_args()
 
     only = {c.strip() for c in args.only.split(",") if c.strip()} if args.only else None
@@ -185,7 +185,7 @@ def main() -> int:
             )
             print(_render_plan(plan, scoped=scoped))
             print("\nPREVIEW ONLY — CC_LIVE_PROMOTION is not armed, so nothing was written.")
-            print("Review the each-UoM resolution + cm dims above; if right, `export CC_LIVE_PROMOTION=true` and re-run.")
+            print("Review the each-UoM resolution + metres dims above; if right, `export CC_LIVE_PROMOTION=true` and re-run.")
             return 0
 
         # ARMED. The approval token (W2) is prompted so a human holding the secret approves —
@@ -205,7 +205,7 @@ def main() -> int:
                 print(f"\n  fix the cause and re-run — the {len(report.written)} written SKUs will no-op (idempotent).")
                 exit_code = 1
             else:
-                print("\n  ✅ all targeted SKUs landed + read-back verified on the each (Base) UoM, in cm.")
+                print("\n  ✅ all targeted SKUs landed + read-back verified on the each (Base) UoM, in metres.")
                 exit_code = 0
 
     except DimsRoundtripError as e:

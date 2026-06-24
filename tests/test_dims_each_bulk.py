@@ -8,7 +8,7 @@ which every SKU has and whose names are clean (probe: 455/455 valid).
 5d reuses the proven M-DIMS-4/5c engine UNCHANGED — the 5a gate, ONE batch hard stop, paced
 fail-fast, ``write_and_verify`` + UoM-specific read-back, W4 idempotency, the CC_LIVE_PROMOTION
 precondition. The ONLY thing that differs from 5c is the UoM resolver: ``resolve_default_uom``
-(the each) instead of ``resolve_ct_uom``. Dims arrive in cm via ``captured_cc_dims_table`` (the
+(the each) instead of ``resolve_ct_uom``. Dims arrive in metres via ``captured_cc_dims_table`` (the
 script's concern; here the desired dict is injected directly).
 
 CC is mocked; the live run is Jake's deliberate, armed ``scripts/run_dims_each_bulk.py`` — never
@@ -125,7 +125,7 @@ def test_run_each_bulk_writes_dims_to_the_default_uom_for_live_skus():
     p1, p2 = _each("c1", "FP-1"), _each("c2", "HI-2")
     client = _client_with(p1, p2)
     desired = {
-        "FP-1": {"length": 30.0, "width": 20.0, "height": 10.0, "weight": 5.0},  # cm
+        "FP-1": {"length": 30.0, "width": 20.0, "height": 10.0, "weight": 5.0},  # illustrative desired dims (engine is unit-agnostic)
         "HI-2": {"length": 25.0, "width": 18.0, "height": 9.0, "weight": 3.0},
     }
     cands = [LiveCandidate("c1", "FP-1"), LiveCandidate("c2", "HI-2")]
@@ -196,11 +196,11 @@ def test_run_each_bulk_fail_fast_keeps_known_good_and_leaves_rest_untouched():
 
 
 def test_run_each_bulk_corrects_preexisting_wrong_dims():
-    # The 15 already-dimensioned SKUs: EA already carries the pre-cm 10x value (255), the captured
-    # desired is cm (25.5). The idempotent diff sees a change → PATCH corrects it. Not special-cased.
+    # The 15 already-dimensioned SKUs: EA carries a stale wrong-magnitude value (255), the captured
+    # desired is metres (0.255). The idempotent diff sees a change → PATCH corrects it. Not special-cased.
     p = _each("c1", "FP-1", length=255, width=230, height=150, weight=2.2)  # stale mm value on the each
     client = _client_with(p)
-    desired = {"FP-1": {"length": 25.5, "width": 23.0, "height": 15.0, "weight": 2.2}}  # cm
+    desired = {"FP-1": {"length": 0.255, "width": 0.23, "height": 0.15, "weight": 2.2}}  # metres
 
     report = run_each_bulk(
         client=client, config=_cfg(live_promotion=True), desired_lookup=lambda c: desired.get(c),
@@ -209,8 +209,8 @@ def test_run_each_bulk_corrects_preexisting_wrong_dims():
     )
 
     assert [w["code"] for w in report.written] == ["FP-1"]
-    assert report.written[0]["before"]["length"] == 255, "saw the stale 10x value"
-    assert report.written[0]["after"]["length"] == 25.5, "corrected to cm in place"
+    assert report.written[0]["before"]["length"] == 255, "saw the stale wrong-magnitude value"
+    assert report.written[0]["after"]["length"] == 0.255, "corrected to metres in place"
     assert len(client._http.patches) == 1
 
 
@@ -371,5 +371,8 @@ def test_format_each_bulk_report_states_scope_and_counts():
     out = format_each_bulk_report(report)
     assert "Each" in out or "each" in out
     assert "1" in out  # written count
+    # The unit is METRES now (the ÷1000 fix); the report must not still claim cm.
+    assert "metre" in out.lower()
+    assert " cm." not in out and "in cm" not in out
     # CT is named as out-of-scope so a reader can't mistake this for the CT write.
     assert "CT" in out

@@ -61,7 +61,7 @@ def _load_dotenv(path: Path) -> None:
 def _captured_table(dims_path: Path) -> dict[str, dict]:
     """Captured dims keyed by base Forage code (fully-measured L/W/H only); same as 5a/5b.
 
-    Captured in mm, converted to CartonCloud's unit (cm L/W/H, kg weight) by
+    Captured in mm, converted to CartonCloud's unit (metres L/W/H, kg weight) by
     `captured_cc_dims_table` at this write boundary.
     """
     return captured_cc_dims_table(load_dimensions(dims_path))

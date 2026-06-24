@@ -79,6 +79,14 @@ until the slotting logic has been validated against reality for a quarter.
   (127.0.0.1:8078); published at runs.rolodex-ai.com via the `wms-runs`
   Cloudflare tunnel. Read-only against CC. The build core is
   `src/dispatch/runner.py`, shared with the CLI.
+- `dim-capture-app/` (its own git repo): the floor-facing dim **capture +
+  CC-sync** web app (React + Node/Express + Postgres, docker compose behind
+  nginx). Putaway scans a SKU, enters L/W/H/weight + photos; the backend
+  writes dims to CC via the validated OAuth2 / warehouse-products / v8 /
+  **mm→m (÷1000)** recipe (module 16, `backend/src/services/ccClient.ts`).
+  **LIVE on the gocold-nuc since 24 Jun 2026** — http://192.168.1.188:5175
+  (docker compose, prod frontend on 5175; 453 Forage SKUs seeded). Camera
+  capture needs HTTPS; manual barcode entry works on plain HTTP.
 
 ## Validated against real data (10 May 2026)
 
@@ -135,10 +143,14 @@ until the slotting logic has been validated against reality for a quarter.
 
 ## Credentials & scopes
 
-- **Only `./.env` holds live CC creds** (`CC_CLIENT_ID` / `CC_CLIENT_SECRET`
-  / `CC_TENANT_ID`), OAuth2 client_credentials. The `dim-capture-app/*`
-  envs are a different, not-yet-live auth model (Bearer `CC_API_KEY`) and
-  currently hold placeholders only.
+- **`./.env` holds live CC creds** (`CC_CLIENT_ID` / `CC_CLIENT_SECRET`
+  / `CC_TENANT_ID`), OAuth2 client_credentials. `dim-capture-app/` now uses
+  the **same** OAuth2 client_credentials recipe (module 16 — it replaced the
+  never-validated Bearer `CC_API_KEY` / legacy-`/api/v1` model; there is no
+  more `CC_API_KEY`). Its `backend/.env` carries the same
+  `CC_CLIENT_ID` / `CC_CLIENT_SECRET` / `CC_TENANT_ID` plus a `SYNC_SECRET`
+  that fail-closes the CC sync + seed routes (`requireSyncKey` → 503 if unset;
+  never an unauthenticated CC write).
 - **Granted scopes in use (all reads):** orders + SOH/inventory via the
   *WMS Create Job* role (`/outbound-orders`, `/inbound-orders`,
   `/report-runs`); carton dims via *WMS Add/Edit Product*
@@ -173,23 +185,34 @@ until the slotting logic has been validated against reality for a quarter.
   23 Jun "cm" reads; the "cm confirmed live" eyeball read `23×14×20.5` as cm but
   in a metres field those are absurd, and the each-census already found 11 SKUs
   correctly stored in metres). The capture template is in mm, so the write
-  boundary must convert **mm→m (÷1000)**, weight stays kg. ⚠ The Python engine
-  (`dims_write.captured_cc_dims_table`, `MM_PER_CM=10`) STILL writes cm and is
-  WRONG — must become ÷1000 before any re-run. ⚠ Dims already written live
+  boundary must convert **mm→m (÷1000)**, weight stays kg. ✅ The Python engine
+  (`dims_write.captured_cc_dims_table`, now `mm_to_m` / `MM_PER_METRE=1000`) writes
+  **metres (÷1000)** as of 25 Jun 2026 (branch `fix/dims-metres-and-preflight`, TDD,
+  CC-mocked, NOT run live) — it superseded the wrong `mm_to_cm` ÷10. ⚠ Dims already written live
   (`sHL-BWC` sandbox + the 4 EA 5b SKUs in mm, and the **132 5d SKUs in cm**) are
-  the wrong magnitude (cm writes ~100× too big in a metres field) and need
-  correcting in a separate, deliberately-armed run. The **app's** write boundary
+  the wrong magnitude in CC's metres field and are NOT separately corrected — the next
+  deliberately-armed metres bulk run's idempotent diff overwrites them (`23 ≠ 0.023` →
+  PATCH corrects; already-metres no-ops). The **app's** write boundary
   (`dim-capture-app/backend/src/services/ccClient.ts`) is already corrected to
   mm→m (÷1000), 24 Jun 2026. See `DIMS_UOM_STATE.md`.
-  The earlier
-  `dim-capture-app/` legacy-API approach (Bearer key, `/products` PATCH on
-  `app.cartoncloud.com.au/api/v1`) is **superseded** — the live OAuth2 API
-  writes dims natively (see gotcha #6 for the recipe). Remaining before the
+  The `dim-capture-app/` was **rebuilt on this same OAuth2/v8 recipe** (module
+  16, mm→m ÷1000) and is now the **live floor capture path** on the gocold-nuc
+  (deployed 24 Jun 2026 — see Current capabilities); its old Bearer-key
+  `/api/v1` contract is gone. Both the local **and the NUC** checkouts have
+  pulled the `CC_BASE_URL` fix (PR #16, 25 Jun 2026, now `f17325c`); ⚠ the NUC
+  containers were deliberately **not rebuilt** (still the pre-#16 image, which
+  the explicit `CC_BASE_URL` env workaround already covers) — #16 bakes in on
+  the next `docker compose up -d --build`. The Python
+  `dims_write/` engine is the separate *bulk* write path. Remaining before the
   live Forage rollout: build the all-~409-SKU loop (rate-limited) and
   deliberately flip the `assert_sandbox_only` allow-list from sandbox→Forage
   (it refuses to write to Forage until that approved change is made).
   Run previews with `scripts/run_dims_shadow_validate.py` (no write); the
-  human-gated write is `scripts/run_dims_sandbox_roundtrip.py`.
+  human-gated write is `scripts/run_dims_sandbox_roundtrip.py`. Before any bulk,
+  pre-flight an edited capture sheet read-only with
+  `scripts/validate_capture_sheet.py --dims-path <file>` (no CC — confirms it parses
+  through the real loader, reports the resolved column mapping + SKU counts, and flags
+  unit mix-ups like a metres/cm value left in the mm sheet).
 - **M-DIMS-5c (CT carton-UoM write) is DROPPED from automated scope — CC-side
   name trap, not a code bug.** The armed 5c run fail-fast halted on AE-BLA with
   a 422 `{"field":"/unitOfMeasures/CT/name","message":"Must be between 3 and 64
@@ -211,9 +234,10 @@ until the slotting logic has been validated against reality for a quarter.
   (`CC_LIVE_PROMOTION`, default-closed), ONE batch hard stop, fail-fast,
   `finalize_exit` still-armed safeguard. `--only CODES` restricts the run for
   Jake's first deliberate few-SKU test before the bulk. The bulk wrote 132 SKUs
-  then hit the name-poison finding (below). ⚠ **Those 132 are in cm and ~100× too
-  big** — CC wants metres (units correction above); the engine + the 132 live
-  writes both need re-correcting (÷1000). CT carton UoM is CLOSED (out of scope).
+  then hit the name-poison finding (below). ✅ The **engine is now fixed** (writes metres,
+  ÷1000, 25 Jun 2026); ⚠ the **132 live writes are still cm** (~100× too big in a metres
+  field) and get corrected by the next armed metres re-run's idempotent diff, not a separate
+  pass. CT carton UoM is CLOSED (out of scope).
   - **Name-poison guard (`block_on_poisoning_uom`, default-on in `run_each_bulk`).**
     The live bulk fail-fast halted on HL-6VA with a 422 on `/unitOfMeasures/CT/name`
     *while writing EA* — CC validates the WHOLE product UoM set on any dims PATCH, so
