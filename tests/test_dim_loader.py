@@ -86,7 +86,7 @@ def test_no_false_substring_match():
 def test_each_rework_headers_resolve(monkeypatch):
     """The Jun-2026 each-rework relabelled the kept per-each dims "Each * (mm)" and the
     carton-qty column "CT Qty per pallet" (carton/"Outer" dims split out). These must resolve to
-    the same normalised columns the write path reads — still mm (÷10 to cm happens at the CC
+    the same normalised columns the write path reads — still mm (÷1000 to metres happens at the CC
     boundary, not here)."""
     sheet = pd.DataFrame({
         "Product Code": ["BB-2CH", "AE-2CB"],
@@ -126,3 +126,39 @@ def test_june_ods_template_loads():
     assert df["inner_pack_qty"].notna().sum() >= 400
     # the "total leyers" typo'd layers column resolves
     assert df["layers_per_pallet"].notna().sum() >= 400
+
+
+# ---------- exposed helpers reused by the read-only preflight validator ----------
+
+def test_resolve_capture_columns_maps_each_rework_headers():
+    from analysis.dim_loader import resolve_capture_columns
+    df = pd.DataFrame(columns=[
+        "Product Code", "Each L (mm)", "Each W (mm)", "Each H (mm)",
+        "Each Weight (kg)", "Inner Pack Qty Per CT", "CT Qty per pallet",
+    ])
+    cols = resolve_capture_columns(df)
+    assert cols["outer_l_mm"] == "Each L (mm)"
+    assert cols["outer_w_mm"] == "Each W (mm)"
+    assert cols["outer_h_mm"] == "Each H (mm)"
+    assert cols["outer_weight_kg"] == "Each Weight (kg)"
+    assert cols["inner_pack_qty"] == "Inner Pack Qty Per CT"   # prefix match
+    assert cols["cartons_per_pallet"] == "CT Qty per pallet"
+
+
+def test_resolve_capture_columns_none_for_absent():
+    from analysis.dim_loader import resolve_capture_columns
+    cols = resolve_capture_columns(pd.DataFrame(columns=["Product Code", "Outer L (mm)"]))
+    assert cols["outer_l_mm"] == "Outer L (mm)"        # the v1 header still resolves
+    assert cols["cartons_per_pallet"] is None          # absent -> None, not a crash
+    assert cols["outer_weight_kg"] is None
+
+
+def test_read_capture_sheet_keeps_only_rows_with_product_code(monkeypatch):
+    from analysis.dim_loader import read_capture_sheet
+    sheet = pd.DataFrame({
+        "Product Code": ["FP-1", None, "FP-2"],
+        "Outer L (mm)": [100, 200, 300],
+    })
+    monkeypatch.setattr("analysis.dim_loader.pd.read_excel", lambda *a, **k: sheet)
+    raw = read_capture_sheet(Path("ignored.xlsx"))
+    assert list(raw["Product Code"]) == ["FP-1", "FP-2"]
