@@ -53,10 +53,10 @@ def _load_dotenv(path: Path) -> None:
 
 
 def _build_desired_lookup(dims_path: Path):
-    """Sandbox SKU code → captured {length,width,height,weight} in CC units (cm / kg).
+    """Sandbox SKU code → captured {length,width,height,weight} in CC units (metres / kg).
 
     Identical to the live round-trip's lookup so shadow selects the SAME SKU live would.
-    `captured_cc_dims_table` converts the mm capture columns to centimetres (CC's unit) and
+    `captured_cc_dims_table` converts the mm capture columns to metres (CC's unit) and
     offers only fully-measured SKUs (L/W/H present).
     """
     table = captured_cc_dims_table(load_dimensions(dims_path))

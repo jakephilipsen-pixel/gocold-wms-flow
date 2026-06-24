@@ -1,10 +1,12 @@
-"""Captured-dims → CartonCloud unit boundary (M-DIMS units fix, 23 Jun 2026).
+"""Captured-dims → CartonCloud unit boundary (M-DIMS units fix → METRES, 24 Jun 2026).
 
 The capture template measures cartons in MILLIMETRES; CartonCloud's UoM length/width/height
-are CENTIMETRES (Jake, confirmed against the CC UI 23 Jun 2026). So at the ONE boundary where
-captured dims become the values PATCHed to CC, L/W/H are divided by 10 and weight (kg) is left
-alone. These tests pin that conversion and the fully-measured filter that all the dims-write
-scripts share.
+are METRES (Jake, confirmed against the CC UI volume field 24 Jun 2026 — a carton reading
+~1200 m³ means the linear dims were stored 1000× too large; this supersedes BOTH the earlier
+"mm" assumption AND the 23 Jun "cm" read that PR #26 wrongly encoded as ÷10). So at the ONE
+boundary where captured dims become the values PATCHed to CC, L/W/H are divided by 1000 and
+weight (kg) is left alone. These tests pin that conversion and the fully-measured filter that
+all the dims-write scripts share.
 """
 from __future__ import annotations
 
@@ -12,36 +14,36 @@ import math
 
 import pandas as pd
 
-from dims_write.capture import mm_to_cm, captured_cc_dims_table, MM_PER_CM
+from dims_write.capture import mm_to_m, captured_cc_dims_table, MM_PER_METRE
 
 
-def test_mm_per_cm_is_ten():
-    assert MM_PER_CM == 10.0
+def test_mm_per_metre_is_1000():
+    assert MM_PER_METRE == 1000.0
 
 
-def test_mm_to_cm_divides_by_ten():
-    assert mm_to_cm(255) == 25.5
-    assert mm_to_cm(1000) == 100.0
-    assert mm_to_cm(247) == 24.7
-    assert mm_to_cm(0) == 0.0
+def test_mm_to_m_divides_by_1000():
+    assert mm_to_m(255) == 0.255
+    assert mm_to_m(1000) == 1.0
+    assert mm_to_m(247) == 0.247
+    assert mm_to_m(0) == 0.0
 
 
-def test_mm_to_cm_passes_through_none_and_nan():
-    assert mm_to_cm(None) is None
-    assert mm_to_cm(float("nan")) is None
+def test_mm_to_m_passes_through_none_and_nan():
+    assert mm_to_m(None) is None
+    assert mm_to_m(float("nan")) is None
 
 
 def _df(rows):
     return pd.DataFrame(rows)
 
 
-def test_table_converts_lwh_to_cm_and_keeps_weight_kg():
+def test_table_converts_lwh_to_m_and_keeps_weight_kg():
     df = _df([
         {"product_code": "RK-001", "outer_l_mm": 255, "outer_w_mm": 230,
          "outer_h_mm": 150, "outer_weight_kg": 2.2},
     ])
     table = captured_cc_dims_table(df)
-    assert table["RK-001"] == {"length": 25.5, "width": 23.0, "height": 15.0, "weight": 2.2}
+    assert table["RK-001"] == {"length": 0.255, "width": 0.23, "height": 0.15, "weight": 2.2}
 
 
 def test_table_drops_rows_missing_any_lwh():
@@ -63,5 +65,5 @@ def test_table_keeps_row_with_missing_weight_only():
          "outer_h_mm": 100, "outer_weight_kg": float("nan")},
     ])
     table = captured_cc_dims_table(df)
-    assert table["NO-WT"]["length"] == 30.0
+    assert table["NO-WT"]["length"] == 0.3
     assert table["NO-WT"]["weight"] is None or math.isnan(table["NO-WT"]["weight"])

@@ -123,6 +123,54 @@ def _parse_pallet_height_bucket(raw: object) -> int | None:
     return None
 
 
+# Logical output column -> ordered candidate headers (tolerant exact->prefix match). The single
+# source of truth for column resolution, shared by load_dimensions and the preflight validator so
+# the validator reports the SAME mapping the write path actually reads.
+CAPTURE_COLUMN_CANDIDATES: dict[str, tuple[str, ...]] = {
+    "outer_l_mm": ("Each L (mm)", "Outer L (mm)"),
+    "outer_w_mm": ("Each W (mm)", "Outer W (mm)"),
+    "outer_h_mm": ("Each H (mm)", "Outer H (mm)"),
+    "outer_weight_kg": ("Each Weight (kg)", "Outer Weight (kg)"),
+    "inner_pack_qty": ("Inner Pack Qty",),
+    "cartons_per_pallet": ("CT Qty per pallet", "Outer Carton Qty per pallet", "Outer Carton Qty"),
+    # observed June-2026 template carries the operator's "leyers" typo:
+    "layers_per_pallet": ("layers per pallet", "Layers Per Pallet",
+                          "total leyers per pallet", "total layers per pallet"),
+    "pallet_tihi": ("Pallet TI x HI",),
+    "pallet_height_bucket": ("Pallet height 1, 2 or 3", "Pallet Height", "Pallet Height Bucket"),
+    "pickbench": ("Pickbench for repack (Y/N)", "Pickbench (Y/N)", "Pickbench"),
+    "tag": ("Tag",),
+    "notes": ("Notes",),
+    "measured_by": ("Measured By",),
+    "date_measured": ("Date Measured",),
+}
+
+# The logical columns load_dimensions hard-requires (their absence raises). L/W/H drive the write;
+# cartons-per-pallet drives slotting — a sheet without them is unusable, so the loader refuses it.
+REQUIRED_CAPTURE_COLUMNS: tuple[str, ...] = (
+    "outer_l_mm", "outer_w_mm", "outer_h_mm", "cartons_per_pallet",
+)
+
+
+def read_capture_sheet(path: Path) -> pd.DataFrame:
+    """Read the raw 'SKU Capture' sheet (header on row 4), keeping only rows with a Product Code.
+
+    The single entry point both ``load_dimensions`` and the read-only preflight validator use, so
+    they see exactly the same rows — no conversion, no column resolution, just the raw frame.
+    """
+    df = pd.read_excel(path, sheet_name="SKU Capture", header=3)
+    return df[df["Product Code"].notna()].copy()
+
+
+def resolve_capture_columns(df: pd.DataFrame) -> dict[str, str | None]:
+    """Map each logical capture column to the actual sheet header (tolerant), or None if absent.
+
+    Wraps ``_find_col`` over ``CAPTURE_COLUMN_CANDIDATES`` once, so ``load_dimensions`` and the
+    preflight ``capture_validate`` tool resolve columns identically.
+    """
+    return {logical: _find_col(df, *cands) for logical, cands in CAPTURE_COLUMN_CANDIDATES.items()}
+
+
 def load_dimensions(path: Path) -> pd.DataFrame:
     """Load capture template; return normalised per-SKU dimension data.
 
@@ -132,38 +180,26 @@ def load_dimensions(path: Path) -> pd.DataFrame:
         outer_cube_mm3, pickbench, pallet_height_bucket, bay_height_mm,
         tag, measured_by, date_measured, measurement_complete
     """
-    df = pd.read_excel(path, sheet_name="SKU Capture", header=3)
-    df = df[df["Product Code"].notna()].copy()
+    df = read_capture_sheet(path)
 
-    # Resolve column names (tolerate v1/v2 templates, and the Jun-2026 each-rework where the
-    # carton/"Outer" dims were split out and the kept per-each dims were relabelled "Each * (mm)"
-    # with quantities under "* per CT"). Still mm — values are divided to cm at the CC write
-    # boundary, not here.
-    col_l = _find_col(df, "Each L (mm)", "Outer L (mm)")
-    col_w = _find_col(df, "Each W (mm)", "Outer W (mm)")
-    col_h = _find_col(df, "Each H (mm)", "Outer H (mm)")
-    col_weight = _find_col(df, "Each Weight (kg)", "Outer Weight (kg)")
-    col_inner = _find_col(df, "Inner Pack Qty")
-    col_cpp = _find_col(
-        df, "CT Qty per pallet", "Outer Carton Qty per pallet", "Outer Carton Qty",
-    )
-    col_layers = _find_col(
-        df,
-        "layers per pallet", "Layers Per Pallet",
-        # observed June-2026 template (note the operator's "leyers" typo):
-        "total leyers per pallet", "total layers per pallet",
-    )
-    col_tihi = _find_col(df, "Pallet TI x HI")
-    col_height_bucket = _find_col(
-        df, "Pallet height 1, 2 or 3", "Pallet Height", "Pallet Height Bucket",
-    )
-    col_pickbench = _find_col(
-        df, "Pickbench for repack (Y/N)", "Pickbench (Y/N)", "Pickbench",
-    )
-    col_tag = _find_col(df, "Tag")
-    col_notes = _find_col(df, "Notes")
-    col_measured_by = _find_col(df, "Measured By")
-    col_date = _find_col(df, "Date Measured")
+    # Resolve column names from the single shared candidate table (tolerates v1/v2 templates and
+    # the Jun-2026 each-rework), so the preflight validator reports the same mapping. Still mm —
+    # values are divided to metres at the CC write boundary, not here.
+    cols = resolve_capture_columns(df)
+    col_l = cols["outer_l_mm"]
+    col_w = cols["outer_w_mm"]
+    col_h = cols["outer_h_mm"]
+    col_weight = cols["outer_weight_kg"]
+    col_inner = cols["inner_pack_qty"]
+    col_cpp = cols["cartons_per_pallet"]
+    col_layers = cols["layers_per_pallet"]
+    col_tihi = cols["pallet_tihi"]
+    col_height_bucket = cols["pallet_height_bucket"]
+    col_pickbench = cols["pickbench"]
+    col_tag = cols["tag"]
+    col_notes = cols["notes"]
+    col_measured_by = cols["measured_by"]
+    col_date = cols["date_measured"]
 
     required = {"L": col_l, "W": col_w, "H": col_h, "cartons-per-pallet": col_cpp}
     missing = [k for k, v in required.items() if v is None]

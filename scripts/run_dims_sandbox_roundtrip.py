@@ -53,12 +53,12 @@ def _load_dotenv(path: Path) -> None:
 
 
 def _build_desired_lookup(dims_path: Path):
-    """Sandbox SKU code → real captured {length,width,height,weight} in CC units (cm / kg).
+    """Sandbox SKU code → real captured {length,width,height,weight} in CC units (metres / kg).
 
     The capture template is keyed by the BASE Forage code (RK-001); the sandbox SKUs are
     s-prefixed mirrors (sRK-001). `sandbox_desired_lookup` resolves the prefix — see its
     docstring + GROUND_TRUTH §5. `captured_cc_dims_table` reads the mm capture columns,
-    converts L/W/H to centimetres (CC's unit), keeps weight in kg, and offers only
+    converts L/W/H to metres (CC's unit), keeps weight in kg, and offers only
     fully-measured SKUs (L/W/H present).
     """
     table = captured_cc_dims_table(load_dimensions(dims_path))

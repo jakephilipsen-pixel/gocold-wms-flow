@@ -2,7 +2,8 @@
 
 State of the dims→CartonCloud sync, by unit-of-measure. Source of truth for "where do dims go".
 
-_Last updated: 24 Jun 2026 (UNITS CORRECTION: CC stores **metres**, not cm — see banner)._
+_Last updated: 25 Jun 2026 (engine now writes metres ÷1000 + capture-sheet pre-flight — see banner;
+24 Jun was the units correction)._
 
 ## ⚠⚠ UNITS CORRECTION — CC stores METRES, not centimetres (Jake, 24 Jun 2026)
 
@@ -16,14 +17,18 @@ read the numbers `23×14×20.5` as cm — but in a metres field those are 23 m �
 them "wrong (metres)"; under the metres truth **those 11 were the only correct entries**, and the
 cm engine would have inflated them 100×.
 
-**Impact — NOT yet fixed (deliberate, gated live operation; Jake owns the re-correction):**
-- The Python engine (`dims_write.captured_cc_dims_table`, `mm_to_cm`, `MM_PER_CM=10`) **still writes
-  cm** and is WRONG. It MUST be changed to ÷1000 before any re-run.
-- The **132 SKUs written live in 5d are ~100× too big** (cm values in a metres field), as are the
-  sandbox `sHL-BWC` and the 4 EA 5b writes. All need re-correcting once the engine is fixed and
-  deliberately re-armed.
-- The **app** (`dim-capture-app`) write boundary has already been corrected to mm→m (÷1000),
-  24 Jun 2026 — `backend/src/services/ccClient.ts`.
+**Impact:**
+- ✅ The Python engine (`dims_write.captured_cc_dims_table`, now `mm_to_m`, `MM_PER_METRE=1000`)
+  **writes metres (÷1000)** as of 25 Jun 2026 — branch `fix/dims-metres-and-preflight` (TDD,
+  CC-mocked, NOT run live). It replaced the wrong `mm_to_cm` / `MM_PER_CM=10` (÷10).
+- ⚠ The dims **already written live are still the wrong magnitude** in CC's metres field, and are
+  **NOT separately corrected**: the **132 SKUs from 5d went in as cm (~100× too big)**; the sandbox
+  `sHL-BWC` and the 4 EA 5b writes went in as mm (~1000× too big). The next deliberately-armed
+  metres bulk run's idempotent W4 diff overwrites them (a stored `23` ≠ the new `0.023` → diff
+  non-empty → PATCH corrects; an already-correct metres value no-ops). A known, recorded state —
+  Jake owns that gated re-run.
+- The **app** (`dim-capture-app`) write boundary was corrected to mm→m (÷1000) on 24 Jun 2026 —
+  `backend/src/services/ccClient.ts`.
 
 _Everything below this banner that says "cm" predates the correction — read it as "metres" for the
 target unit; the wrong-unit analysis in the tracking table is now inverted (see notes there)._
@@ -31,12 +36,12 @@ target unit; the wrong-unit analysis in the tracking table is now inverted (see 
 ## TL;DR
 
 - **Each / Base UoM (`defaultUnitOfMeasure`) — THE dims pipeline.** Automated target, written in
-  **cm**. Built: `dims_write.run_each_bulk` + `scripts/run_dims_each_bulk.py` (M-DIMS-5d).
-  Live-gated (`CC_LIVE_PROMOTION`, default-closed), batch hard stop, fail-fast, `finalize_exit`.
-  **cm CONFIRMED LIVE** (few-SKU test BB-2CH/CL/SS, eyeballed in CC: BB-2CL = 23×14×20.5 for a
-  1.3 kg 6-pack, physically sensible). The full bulk then wrote **132 SKUs** before halting (see
-  the name-poison finding) — those 132 are correct cm and live. Re-run is idempotent (the 132
-  no-op).
+  **metres** (÷1000, engine fixed 25 Jun 2026). Built: `dims_write.run_each_bulk` +
+  `scripts/run_dims_each_bulk.py` (M-DIMS-5d). Live-gated (`CC_LIVE_PROMOTION`, default-closed),
+  batch hard stop, fail-fast, `finalize_exit`. ⚠ The earlier live bulk wrote **132 SKUs in cm**
+  (the old ÷10 bug) before halting on the name-poison finding — those 132 are the WRONG magnitude
+  in CC's metres field and get corrected by the next metres re-run (idempotent diff: `23 ≠ 0.023`
+  → PATCH; already-metres SKUs no-op).
 
 ## ⚠ The name-poison finding (M-DIMS-5d live bulk, 23 Jun 2026)
 
@@ -76,9 +81,11 @@ dims because of an unfixable name, that's a rulebook gap worth one more push bef
 ## Units
 
 CC's UoM `length`/`width`/`height` are **metres** (corrected 24 Jun 2026 — see top banner);
-weight is **kg**. The capture template is in **mm**, so the write boundary must convert
-**mm→m (÷1000)**. ⚠ `dims_write.captured_cc_dims_table` still does ÷10 (cm) and is WRONG until
-fixed. The app's `ccClient.ts` already converts mm→m. (See CLAUDE.md gotcha #6.)
+weight is **kg**. The capture template is in **mm**, so the write boundary converts
+**mm→m (÷1000)**. ✅ `dims_write.captured_cc_dims_table` (via `mm_to_m`, `MM_PER_METRE=1000`) now
+does this (fixed 25 Jun 2026); the app's `ccClient.ts` already converted mm→m. (See CLAUDE.md
+gotcha #6.) Pre-flight an edited capture sheet read-only with `scripts/validate_capture_sheet.py`
+(no CC — confirms it parses + is uniformly mm) before any bulk consumes it.
 
 ## Tracking — the 15 live SKUs that already carry each (Base UoM) dims (read-only census, 23 Jun 2026)
 
